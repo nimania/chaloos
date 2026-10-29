@@ -561,26 +561,37 @@ def _dedup_core(txt: str) -> str:
     return t[:30]
 
 
+_BULLETS = "🔶🔷🔴🟠🟡🟢🟣🔵⚫⚪▪◾◼●○■□✅⛔🚨◻◽"
+
+
+def _split_events(text: str):
+    """یک پستِ چنداتفاقی را به رویدادهای جدا می‌شکند (روی بولت/دیاموند، خط جدید، « - » و «؛»)."""
+    t = text
+    for b in _BULLETS:
+        t = t.replace(b, "\n")
+    t = re.sub(r"\s[-–—]\s", "\n", t)        # جداکنندهٔ « - »
+    parts = re.split(r"[\n؛]+", t)
+    return [p for p in parts if p and p.strip()]
+
+
 def _clean_news_rule(items, limit):
-    """حالت بدون Gemini: پاک‌سازی + حذف تکراری + یک آیتم کوتاه برای هر خبر (لینکِ کانال حذف می‌شود)."""
+    """بدون Gemini: هر پست را به رویدادهای جدا می‌شکند، تمیز می‌کند، تکراری‌ها را حذف و کوتاه می‌کند."""
     out, seen = [], set()
     for it in items:
-        txt = _strip_noise(it.get("text", ""))
-        txt = _FILLER_PREFIX.sub("", txt).lstrip(" |-–—")   # «فوری |» و امثالش را از نمایش هم بردار
-        if len(txt) < 10:
-            continue
-        key = _dedup_core(txt)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        if len(txt) > 150:
-            txt = txt[:150].rstrip() + "…"
-        link = it.get("link", "")
-        if "t.me" in link:   # نقل از چالوس سیتی را نمی‌آوریم
-            link = ""
-        out.append({"text": txt, "link": link})
-        if len(out) >= limit:
-            break
+        for chunk in _split_events(it.get("text", "")):
+            txt = _strip_noise(chunk)
+            txt = _FILLER_PREFIX.sub("", txt).lstrip(" |-–—:•")
+            if len(txt) < 12:
+                continue
+            key = _dedup_core(txt)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if len(txt) > 120:
+                txt = txt[:120].rstrip() + "…"
+            out.append({"text": txt, "link": ""})   # بدون لینک/نقل از چالوس سیتی
+            if len(out) >= limit:
+                return out
     return out
 
 
