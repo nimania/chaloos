@@ -489,23 +489,107 @@ def fetch_news_items(limit=6):
     return items
 
 
-def get_road_news(limit=6):
-    """خبرهای جاده: اول پست‌های کانال چالوس سیتی، بعد خبرگزاری‌ها. جدید به قدیم، بدون تکرار."""
-    items = []
+# --- پاک‌سازی و خلاصه‌سازی خبرها (هر اتفاق جدا، بدون کپیِ عینِ منبع) ---
+
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "←-⇿⬀-⯿️‍•▪●✔❌]"
+)
+_NOISE_HINT = ("عضو", "جوین", "join", "لینک کانال", "آیدی", "اینستاگرام", "اینستا",
+               "تبلیغ", "ثبت سفارش", "رزرو", "تماس", "واتساپ", "ادمین", "@", "t.me", "http")
+
+
+def _strip_noise(text: str) -> str:
+    """ایموجی، هشتگ، لینک و خطوط تبلیغاتی/کانالی را حذف می‌کند."""
+    t = _EMOJI_RE.sub("", text)
+    t = re.sub(r"#\S+", " ", t)
+    t = re.sub(r"https?://\S+", " ", t)
+    keep = []
+    for ln in re.split(r"[\n،]", t):
+        s = ln.strip(" -—•|*")
+        if len(s) < 3:
+            continue
+        if any(w in s for w in _NOISE_HINT):
+            continue
+        keep.append(s)
+    return normalize(" ".join(keep))   # اگر همه‌چیز تبلیغ بود، خالی می‌شود و فیلتر می‌شود
+
+
+_FILLER_PREFIX = re.compile(r"^(فوری|عاجل|مهم|توجه|خبر فوری|اطلاعیه|خبر)\s*[:|\-–]*\s*")
+
+
+def _dedup_core(txt: str) -> str:
+    t = _FILLER_PREFIX.sub("", txt)
+    t = re.sub(r"[^؀-ۿ ]", " ", t)   # فقط حروف فارسی
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:30]
+
+
+def _clean_news_rule(items, limit):
+    """حالت بدون Gemini: پاک‌سازی + حذف تکراری + یک آیتم کوتاه برای هر خبر (لینکِ کانال حذف می‌شود)."""
+    out, seen = [], set()
+    for it in items:
+        txt = _strip_noise(it.get("text", ""))
+        txt = _FILLER_PREFIX.sub("", txt).lstrip(" |-–—")   # «فوری |» و امثالش را از نمایش هم بردار
+        if len(txt) < 10:
+            continue
+        key = _dedup_core(txt)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if len(txt) > 150:
+            txt = txt[:150].rstrip() + "…"
+        link = it.get("link", "")
+        if "t.me" in link:   # نقل از چالوس سیتی را نمی‌آوریم
+            link = ""
+        out.append({"text": txt, "link": link})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def summarize_news_gemini(items, limit):
+    """با Gemini هر اتفاق را یک‌بار و با بازنویسیِ تمیز درمی‌آورد (بدون کپیِ عینِ منبع)."""
+    if not GEMINI_API_KEY or not items:
+        return None
+    raw = "\n".join(f"{i+1}) {normalize(it.get('text',''))[:300]}" for i, it in enumerate(items))
+    prompt = (
+        "چند پست/خبر خام دربارهٔ راه‌های شمال (محور چالوس و مسیرهای مرتبط) در زیر آمده. "
+        "یک فهرست تمیز بساز:\n"
+        "- هر «اتفاق» فقط یک‌بار، در یک جملهٔ کوتاه و بی‌طرف فارسی. متن را بازنویسی کن، عینِ منبع را کپی نکن.\n"
+        "- موارد تکراری را ادغام کن.\n"
+        "- بدون ایموجی، هشتگ و تبلیغ. فقط اتفاقات مرتبط با جاده/ترافیک/وضعیت/آب‌وهوای محور.\n"
+        f"- حداکثر {limit} مورد، از تازه و مهم به کم‌اهمیت.\n"
+        'خروجی دقیقاً JSON: {"news": ["جملهٔ ۱", "جملهٔ ۲"]}\n\n'
+        "متن‌های خام:\n" + raw
+    )
     try:
-        items += fetch_channel_news(limit)
+        url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+               f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+        r = requests.post(url, timeout=HTTP_TIMEOUT + 20, json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+        })
+        r.raise_for_status()
+        content = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        news = json.loads(content).get("news", [])
+        return [{"text": normalize(n), "link": ""} for n in news if n and len(n) > 5][:limit]
+    except Exception:
+        return None
+
+
+def get_road_news(limit=6):
+    """خبرهای جاده، تمیز و بدون تکرار. اگر کلید Gemini باشد بازنویسی می‌شود؛ وگرنه فقط پاک‌سازی."""
+    raw = []
+    try:
+        raw += fetch_channel_news(limit * 3)   # خام بیشتر تا ادغام/انتخاب بهتر شود
     except Exception:
         pass
-    if len(items) < limit:
-        items += fetch_news_items(limit - len(items))
-    # حذف تکراری‌ها بر اساس ۲۵ کاراکتر اول
-    seen, out = set(), []
-    for it in items:
-        key = normalize(it["text"])[:25]
-        if key and key not in seen:
-            seen.add(key)
-            out.append(it)
-    return out[:limit]
+    try:
+        raw += fetch_news_items(limit)
+    except Exception:
+        pass
+    return summarize_news_gemini(raw, limit) or _clean_news_rule(raw, limit)
 
 
 def format_news(items) -> str:
@@ -513,16 +597,11 @@ def format_news(items) -> str:
         return "فعلاً خبر تازه‌ای دربارهٔ محور چالوس پیدا نشد."
     lines = ["🛣 *آخرین خبرهای محور چالوس*", ""]
     for it in items:
-        txt = normalize(it["text"])
-        txt = txt[:180] + ("…" if len(txt) > 180 else "")
-        lines.append(f"• {txt}")
-        meta = it.get("source", "")
+        lines.append(f"• {it['text']}")
         if it.get("link"):
             lines.append(f"  {it['link']}")
-        if meta:
-            lines.append(f"  _{meta}_")
-        lines.append("")
-    lines.append("_منبع: کانال چالوس سیتی و خبرگزاری‌ها · مرجع نهایی: پلیس راه و ۱۴۱_")
+    lines.append("")
+    lines.append("_به‌روزرسانی خودکار · مرجع نهایی: پلیس راه و سامانهٔ ۱۴۱_")
     return "\n".join(lines)
 
 
