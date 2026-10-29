@@ -1,0 +1,51 @@
+name: چک وضعیت جاده چالوس
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # هر ۳۰ دقیقه (UTC). برای تغییر، همین عدد را عوض کن.
+  workflow_dispatch:          # دکمهٔ اجرای دستی در تب Actions
+
+# اجازهٔ نوشتن تا بتواند state.json را برگرداند
+permissions:
+  contents: write
+
+# جلوگیری از اجرای همزمان دو نسخه
+concurrency:
+  group: chalous-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: گرفتن کد
+        uses: actions/checkout@v4
+
+      - name: نصب پایتون
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: نصب وابستگی‌ها
+        run: pip install -r requirements.txt
+
+      - name: چک وضعیت و پست در صورت تغییر
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALERT_CHAT_ID: "@chaloosradar"
+          TG_CHANNEL: chaluscity1
+          # اختیاری: کلید Gemini برای خبرهای مبهم (همان کلید پندار)
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+        run: python check_once.py
+
+      - name: ذخیرهٔ وضعیت جدید (فقط اگر عوض شده)
+        run: |
+          if [[ -n "$(git status --porcelain state.json)" ]]; then
+            git config user.name "chalous-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add state.json
+            git commit -m "update chalous state [skip ci]"
+            git push
+          else
+            echo "تغییری در وضعیت نبود؛ چیزی commit نشد."
+          fi

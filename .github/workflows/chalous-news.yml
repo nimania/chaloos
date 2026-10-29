@@ -1,0 +1,27 @@
+name: دایجست خبرهای چالوس
+
+on:
+  schedule:
+    - cron: "30 3 * * *"    # ۷:۰۰ صبح به وقت تهران
+    - cron: "30 14 * * *"   # ۱۸:۰۰ عصر به وقت تهران
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: ارسال دایجست خبری به کانال
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALERT_CHAT_ID: "@chaloosradar"
+          TG_CHANNEL: chaluscity1
+          NEWS_LIMIT: "5"
+        run: python news_digest.py
