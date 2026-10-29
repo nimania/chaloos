@@ -15,7 +15,7 @@ import sys
 
 import requests
 
-from chalous_status import get_chalous_status, format_message
+from chalous_status import get_chalous_status, format_message, format_breaking
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 ALERT_CHAT_ID = os.environ.get("ALERT_CHAT_ID", "").strip()
@@ -65,8 +65,8 @@ def main():
     if first_run and not ALWAYS_POST:
         print("اولین اجرا: وضعیت ثبت شد، هشدار نمی‌دهم.")
     elif changed:
-        print(f"تغییر وضعیت: {old} → {key} — پست می‌گذارم.")
-        send("🔔 *تغییر وضعیت جادهٔ چالوس!*\n\n" + format_message(s))
+        print(f"تغییر وضعیت: {old} → {key} — پست فوری می‌گذارم.")
+        send(format_breaking(s))
     elif ALWAYS_POST:
         print("ALWAYS_POST روشن است — پست می‌گذارم.")
         send(format_message(s))

@@ -23,7 +23,7 @@ import requests
 
 from chalous_status import (
     get_chalous_status, format_message, status_emoji,
-    get_road_news, format_news,
+    get_road_news, format_news, format_breaking,
 )
 
 # ---------------------------------------------------------------------------
@@ -162,10 +162,8 @@ def check_and_alert():
         return
 
     if new_key != old_key and ALERT_CHAT_ID:
-        emoji = status_emoji(s["status"])
-        alert = f"🔔 *تغییر وضعیت جادهٔ چالوس!*\n\n" + format_message(s)
-        send(ALERT_CHAT_ID, alert)
-        print(f"[check] تغییر: {old_key} -> {new_key} (هشدار ارسال شد)")
+        send(ALERT_CHAT_ID, format_breaking(s))
+        print(f"[check] تغییر: {old_key} -> {new_key} (پست فوری ارسال شد)")
     else:
         print(f"[check] بدون تغییر: {s['status_fa']}")
 

@@ -460,6 +460,42 @@ def format_message(s: dict) -> str:
     return "\n".join(lines)
 
 
+def format_breaking(s: dict) -> str:
+    """پستِ «خبر فوری» برای لحظهٔ باز/بسته/یک‌طرفه شدن — پررنگ و واضح."""
+    st = s["status"]
+    if st == "open":
+        head = "🟢 جادهٔ چالوس باز شد 🟢"
+        body = "✅ محور *باز* و دوطرفه است؛ تردد برقرار شد."
+        banner = "🚨🟢🚨 خبر فوری 🚨🟢🚨"
+    elif st == "closed":
+        head = "🔴 جادهٔ چالوس بسته شد 🔴"
+        body = ("⛔️ محور *مسدود* شد.\n"
+                "مسیرهای جایگزین: *هراز* و *فیروزکوه*.")
+        banner = "🚨🔴🚨 خبر فوری 🚨🔴🚨"
+    elif st == "one_way":
+        d = s.get("direction_fa")
+        head = "🟡 جادهٔ چالوس یک‌طرفه شد 🟡"
+        body = (f"↪️ جهتِ باز: *{d}*" if d else "↪️ محور به‌صورت *یک‌طرفه* مدیریت می‌شود.")
+        banner = "⚠️🟡 توجه 🟡⚠️"
+    else:
+        return "🔔 *تغییر وضعیت جادهٔ چالوس*\n\n" + format_message(s)
+
+    lines = [
+        f"*{banner}*",
+        "",
+        f"*『 {head} 』*",
+        "",
+        body,
+    ]
+    if s.get("checked_at"):
+        lines.append(f"\n🕒 {s['checked_at']}")
+    if s.get("source"):
+        lines.append(f"🔗 {s['source']}")
+    lines.append("\n━━━━━━━━━━━━━━━")
+    lines.append("_مرجع نهایی: پلیس راه، تابلوهای مسیر و سامانهٔ ۱۴۱_")
+    return "\n".join(lines)
+
+
 def fetch_news_items(limit=6):
     """چند خبر اخیر دربارهٔ چالوس از RSS خبری — [{text, link, published, source}]."""
     try:
