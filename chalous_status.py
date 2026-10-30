@@ -42,6 +42,9 @@ DEFAULT_NEWS_RSS = (
 # کانال تلگرام منبع (بدون @)، مثلاً chaloscity — از صفحهٔ عمومی t.me/s/ خوانده می‌شود.
 # این منبع اصلی است؛ اگر خالی باشد مستقیم می‌رود سراغ خبر.
 TG_CHANNEL = os.environ.get("TG_CHANNEL", "chaluscity1").strip().lstrip("@")
+# کانال دوم راهیاب؛ کانال سفارشی TG_CHANNEL همچنان در اولویت است.
+TG_CHANNELS = list(dict.fromkeys(ch for ch in (TG_CHANNEL, "jadeh_chalus") if ch))
+TG_SOURCE_NAMES = {"chaluscity1": "چالوس سیتی", "jadeh_chalus": "جاده چالوس"}
 
 NEWS_RSS_URL = os.environ.get("NEWS_RSS_URL", "").strip()
 BALAD_FALLBACK_URL = os.environ.get(
@@ -254,39 +257,42 @@ def _parse_tg_messages(body: str):
     return out
 
 
-def _get_channel_body():
-    if not TG_CHANNEL:
+def _get_channel_body(channel=None):
+    channel = channel or TG_CHANNEL
+    if not channel:
         return None
-    url = f"https://t.me/s/{TG_CHANNEL}"
+    url = f"https://t.me/s/{channel}"
     r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
     r.raise_for_status()
     return r.text
 
 
-def fetch_from_telegram_channel():
+def fetch_from_telegram_channel(channel=None):
     """جدیدترین پیام کانال که دربارهٔ «وضعیت» محور است (برای تشخیص باز/بسته)."""
-    body = _get_channel_body()
+    channel = channel or TG_CHANNEL
+    body = _get_channel_body(channel)
     if not body:
         return None
     msgs = _parse_tg_messages(body)
     # از جدید به قدیم: اول پیامی که هم چالوس دارد هم واژهٔ وضعیت
     for m in reversed(msgs):
         if "چالوس" in m["text"] and _has(m["text"], STATUS_HINT_WORDS):
-            return _tg_item(m)
+            return _tg_item(m, channel)
     for m in reversed(msgs):
         if "چالوس" in m["text"]:
             return _tg_item(m)
     return None
 
 
-def _tg_item(m):
-    link = f"https://t.me/{m['post']}" if m.get("post") else f"https://t.me/{TG_CHANNEL}"
+def _tg_item(m, channel=None):
+    link = f"https://t.me/{m['post']}" if m.get("post") else f"https://t.me/{channel or TG_CHANNEL}"
     return {"title": m["text"][:400], "description": "", "link": link, "published": m["published"]}
 
 
-def fetch_channel_news(limit=6):
+def fetch_channel_news(limit=6, channel=None):
     """چند پست اخیر کانال که به جاده مربوط‌اند (برای /news) — جدید به قدیم."""
-    body = _get_channel_body()
+    channel = channel or TG_CHANNEL
+    body = _get_channel_body(channel)
     if not body:
         return []
     msgs = _parse_tg_messages(body)
@@ -295,9 +301,9 @@ def fetch_channel_news(limit=6):
         if m["text"] and _has(m["text"], ROAD_WORDS):
             items.append({
                 "text": m["text"],
-                "link": f"https://t.me/{m['post']}" if m.get("post") else f"https://t.me/{TG_CHANNEL}",
+                "link": f"https://t.me/{m['post']}" if m.get("post") else f"https://t.me/{channel}",
                 "published": m["published"],
-                "source": "چالوس سیتی",
+                "source": TG_SOURCE_NAMES.get(channel, channel),
             })
         if len(items) >= limit:
             break
@@ -402,7 +408,9 @@ def get_chalous_status() -> dict:
     now = datetime.datetime.now(datetime.timezone.utc).astimezone()
     src = None
     err = None
-    for fetcher in (fetch_from_telegram_channel, fetch_from_news_rss, fetch_from_balad):
+    fetchers = ([lambda ch=ch: fetch_from_telegram_channel(ch) for ch in TG_CHANNELS]
+                + [fetch_from_news_rss, fetch_from_balad])
+    for fetcher in fetchers:
         try:
             src = fetcher()
             if src:
@@ -629,7 +637,11 @@ def get_road_news(limit=6):
     """خبرهای جاده، تمیز و بدون تکرار. اگر کلید Gemini باشد بازنویسی می‌شود؛ وگرنه فقط پاک‌سازی."""
     raw = []
     try:
-        raw += fetch_channel_news(limit * 3)   # خام بیشتر تا ادغام/انتخاب بهتر شود
+        for channel in TG_CHANNELS:
+            try:
+                raw += fetch_channel_news(limit * 3, channel=channel)
+            except Exception:
+                continue   # خرابی یک کانال نباید بقیه را متوقف کند
     except Exception:
         pass
     try:
