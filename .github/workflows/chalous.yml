@@ -2,7 +2,7 @@ name: چک وضعیت جاده چالوس
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # هر ۳۰ دقیقه (UTC). برای تغییر، همین عدد را عوض کن.
+    - cron: "*/15 * * * *" # زمان‌بندی پایه؛ فیلتر روزانه با Asia/Tehran
   workflow_dispatch:          # دکمهٔ اجرای دستی در تب Actions
 
 # اجازهٔ نوشتن تا بتواند state.json را برگرداند
@@ -21,15 +21,36 @@ jobs:
       - name: گرفتن کد
         uses: actions/checkout@v4
 
+      - name: تعیین نوبت اجرا به وقت تهران
+        id: cadence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import os
+          now = datetime.now(ZoneInfo("Asia/Tehran"))
+          # Python weekdays: Monday=0 ... Sunday=6.
+          minutes = {0: 180, 1: 90, 2: 45, 3: 30, 4: 15, 5: 60, 6: 120}
+          gap = minutes[now.weekday()]
+          slot = now.hour * 60 + now.minute
+          run = os.getenv("GITHUB_EVENT_NAME") != "schedule" or slot % gap < 15
+          print(f"Tehran: {now.isoformat()} | interval={gap}m | run={run}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"run={'true' if run else 'false'}\n")
+          PY
       - name: نصب پایتون
+        if: steps.cadence.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: نصب وابستگی‌ها
+        if: steps.cadence.outputs.run == 'true'
         run: pip install -r requirements.txt
 
       - name: چک وضعیت و پست در صورت تغییر
+        if: steps.cadence.outputs.run == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ALERT_CHAT_ID: "@chaloosradar"
@@ -39,6 +60,7 @@ jobs:
         run: python check_once.py
 
       - name: ذخیرهٔ وضعیت جدید (فقط اگر عوض شده)
+        if: steps.cadence.outputs.run == 'true'
         run: |
           if [[ -n "$(git status --porcelain state.json)" ]]; then
             git config user.name "chalous-bot"
