@@ -2,6 +2,7 @@
 """Publish road-related Telegram posts with their available media."""
 import os
 import sys
+import json
 import requests
 
 from chalous_status import fetch_channel_posts, get_road_news, format_news
@@ -9,6 +10,7 @@ from chalous_status import fetch_channel_posts, get_road_news, format_news
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 ALERT_CHAT_ID = os.environ.get("ALERT_CHAT_ID", "").strip()
 NEWS_LIMIT = int(os.environ.get("NEWS_LIMIT", "5"))
+STATE_FILE = os.environ.get("NEWS_STATE_FILE", "news_state.json")
 
 
 def api(method, payload):
@@ -50,6 +52,13 @@ def publish_post(post):
 
 def main():
     posts = fetch_channel_posts(NEWS_LIMIT)
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {"published": []}
+    seen = set(state.get("published", []))
+    posts = [p for p in posts if p.get("source_url") not in seen]
     if not (BOT_TOKEN and ALERT_CHAT_ID):
         print("Telegram credentials not set. Matching posts:", len(posts))
         for post in posts:
@@ -61,15 +70,14 @@ def main():
         for post in reversed(posts):
             try:
                 publish_post(post)
+                seen.add(post["source_url"])
+                with open(STATE_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"published": sorted(seen)[-1000:]}, f, ensure_ascii=False, indent=2)
             except Exception as exc:
                 print("Post could not be published:", type(exc).__name__)
         return 0
 
-    # When source channels fail, preserve the original news digest fallback.
-    items = get_road_news(NEWS_LIMIT)
-    if items:
-        api("sendMessage", {"text": format_news(items), "parse_mode": "Markdown",
-                            "disable_web_page_preview": True})
+    print("No unpublished Telegram posts.")
     return 0
 
 
