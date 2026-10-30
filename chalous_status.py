@@ -333,7 +333,7 @@ def fetch_channel_posts(limit=8):
                 tt = re.search(r'<time[^>]*datetime="([^"]+)"', chunk)
                 # Public preview has photo URLs in CSS; video previews may also expose
                 # a playable mp4 in <video src=...>. Do not assume any media exists.
-                photos = re.findall(r"background-image:\\s*url\\(['\\\"]?([^'\\\"\\)]+)", chunk)
+                photos = re.findall(r"background-image:\s*url\(['\"]?([^'\"\)]+)", chunk)
                 video = re.search(r'<video[^>]+src="([^"]+)"', chunk)
                 if not video:
                     video = re.search(r'<source[^>]+src="([^"]+\\.mp4[^"]*)"', chunk)
