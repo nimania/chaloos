@@ -310,6 +310,48 @@ def fetch_channel_news(limit=6, channel=None):
     return items
 
 
+def fetch_channel_posts(limit=8):
+    """Public Telegram posts with text and preview media; keep source internally."""
+    posts = []
+    seen = set()
+    for channel in TG_CHANNELS:
+        try:
+            body = _get_channel_body(channel)
+            if not body:
+                continue
+            marks = list(re.finditer(r'data-post="([^"]+)"', body))
+            for i, match in enumerate(marks):
+                chunk = body[match.start(): marks[i + 1].start() if i + 1 < len(marks) else len(body)]
+                tm = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', chunk, re.S)
+                caption = _clean_html(tm.group(1)) if tm else ""
+                if not _has(caption, ROAD_WORDS):
+                    continue
+                post_id = match.group(1)
+                if post_id in seen:
+                    continue
+                seen.add(post_id)
+                tt = re.search(r'<time[^>]*datetime="([^"]+)"', chunk)
+                # Public preview has photo URLs in CSS; video previews may also expose
+                # a playable mp4 in <video src=...>. Do not assume any media exists.
+                photos = re.findall(r'background-image:url\\(\\\'([^\\\']+)\\\'\\)', chunk)
+                if not photos:
+                    photos = re.findall(r'background-image:\\s*url\\(["\\\']?([^"\\\')]+)', chunk)
+                video = re.search(r'<video[^>]+src="([^"]+)"', chunk)
+                if not video:
+                    video = re.search(r'<source[^>]+src="([^"]+\\.mp4[^"]*)"', chunk)
+                videos = [html.unescape(video.group(1))] if video else []
+                photos = list(dict.fromkeys(html.unescape(u) for u in photos if u.startswith("https://")))
+                posts.append({
+                    "text": caption, "photos": photos[:10],
+                    "videos": videos[:1], "published": tt.group(1) if tt else "",
+                    "source": channel, "source_url": "https://t.me/" + post_id,
+                })
+        except Exception as exc:
+            print("Telegram source unavailable:", channel, type(exc).__name__)
+    posts.sort(key=lambda x: x["published"], reverse=True)
+    return posts[:limit]
+
+
 def fetch_from_balad():
     """نسخهٔ پشتیبان: صفحهٔ جست‌وجوی بلد را می‌گیرد و متن را برمی‌گرداند."""
     r = requests.get(BALAD_FALLBACK_URL, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
