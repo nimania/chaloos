@@ -43,7 +43,7 @@ def publish_post(post):
                 {"photo" if kind == "photo" else "video": url})
             sent = True
         except Exception as exc:
-            print("Media unavailable:", type(exc).__name__)
+            print("Media unavailable:", type(exc).__name__, str(exc)[:350], flush=True)
     if body:
         api("sendMessage", {"text": body[:4096], "disable_web_page_preview": True})
     elif not sent:
@@ -52,6 +52,9 @@ def publish_post(post):
 
 def main():
     posts = fetch_channel_posts(NEWS_LIMIT)
+    print(f"Media test: found {len(posts)} matching public posts", flush=True)
+    for p in posts:
+        print(f"Media: photos={len(p.get('photos', []))}, videos={len(p.get('videos', []))}, source={p.get('source_url', '')}", flush=True)
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
             state = json.load(f)
@@ -70,11 +73,12 @@ def main():
         for post in reversed(posts):
             try:
                 publish_post(post)
+                print("Published post:", post.get("source_url"), flush=True)
                 seen.add(post["source_url"])
                 with open(STATE_FILE, "w", encoding="utf-8") as f:
                     json.dump({"published": sorted(seen)[-1000:]}, f, ensure_ascii=False, indent=2)
             except Exception as exc:
-                print("Post could not be published:", type(exc).__name__)
+                print("Post could not be published:", type(exc).__name__, str(exc)[:350], flush=True)
         return 0
 
     print("No unpublished Telegram posts.")
