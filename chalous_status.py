@@ -21,6 +21,7 @@ import html
 import json
 import datetime
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -51,6 +52,17 @@ BALAD_FALLBACK_URL = os.environ.get(
     "BALAD_FALLBACK_URL",
     "https://balad.ir/blog/?s=%D8%AC%D8%A7%D8%AF%D9%87+%DA%86%D8%A7%D9%84%D9%88%D8%B3",
 )
+
+# منبع «رسمی»: خبرگزاری‌هایی که اطلاعیهٔ پلیس راه / مرکز مدیریت راه‌ها (۱۴۱) را
+# مستقیم بازتاب می‌دهند. گوگل‌نیوز نام منبع را در انتهای تیتر بعد از ' - ' می‌گذارد.
+TRUSTED_AGENCIES = (
+    "ایرنا", "ایسنا", "مهر", "خبرآنلاین", "تسنیم", "فارس",
+    "باشگاه خبرنگاران", "پلیس", "صداوسیما", "ایلنا", "رکنا",
+)
+# خبرِ کهنه نباید وضعیت را خراب کند؛ فقط اطلاعیهٔ تازه‌تر از این حد پذیرفته می‌شود.
+OFFICIAL_MAX_AGE_H = int(os.environ.get("OFFICIAL_MAX_AGE_H", "12"))
+# OFFICIAL_FIRST=0 → رفتار قبلی (اول کانال تلگرام). پیش‌فرض: منبع رسمیِ صریح مقدم است.
+OFFICIAL_FIRST = os.environ.get("OFFICIAL_FIRST", "1").strip() not in ("0", "false", "no")
 
 HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "20"))
 USER_AGENT = (
@@ -217,6 +229,54 @@ def fetch_from_news_rss():
         }
         break  # آیتم‌ها از تازه به قدیم‌اند؛ اولی = جدیدترین
     return best
+
+
+def _item_age_hours(pub: str):
+    """عمر خبر به ساعت از روی pubDate؛ اگر قابل‌خواندن نبود None."""
+    if not pub:
+        return None
+    try:
+        dt = parsedate_to_datetime(pub)
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return (now - dt).total_seconds() / 3600.0
+    except Exception:
+        return None
+
+
+def fetch_from_official_news(max_age_hours=None):
+    """
+    تازه‌ترین اطلاعیهٔ «رسمی» دربارهٔ محور چالوس را از خبرگزاری‌های معتبر برمی‌گرداند
+    (بازتاب پلیس راه / مرکز مدیریت راه‌ها). فقط خبرهای معتبر و به‌اندازهٔ کافی تازه
+    پذیرفته می‌شوند تا یک تیتر کهنه یا تبلیغاتی وضعیت را خراب نکند.
+    """
+    max_age_hours = OFFICIAL_MAX_AGE_H if max_age_hours is None else max_age_hours
+    url = _build_news_url()
+    r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    for it in root.findall(".//item"):      # گوگل‌نیوز: تازه → قدیم
+        raw_title = it.findtext("title") or ""
+        desc = re.sub(r"<[^>]+>", " ", it.findtext("description") or "")
+        if "چالوس" not in normalize(raw_title) and "چالوس" not in normalize(desc):
+            continue
+        agency = raw_title.rsplit(" - ", 1)[1] if " - " in raw_title else ""
+        if not any(a in agency for a in TRUSTED_AGENCIES):
+            continue
+        age = _item_age_hours(it.findtext("pubDate") or "")
+        if age is not None and age > max_age_hours:
+            continue
+        title = raw_title.rsplit(" - ", 1)[0] if " - " in raw_title else raw_title
+        return {
+            "title": title.strip(),
+            "description": desc,
+            "link": it.findtext("link") or "",
+            "published": it.findtext("pubDate") or "",
+        }
+    return None
 
 
 STATUS_HINT_WORDS = (
@@ -448,6 +508,23 @@ def get_chalous_status() -> dict:
     now = datetime.datetime.now(datetime.timezone.utc).astimezone()
     src = None
     err = None
+
+    # اولویت با منبع رسمی: اگر پلیس راه / خبرگزاری معتبر خبرِ صریح و تازه داشت،
+    # همان ملاک است (کانال‌های تلگرام می‌توانند مبهم یا تبلیغاتی باشند).
+    if OFFICIAL_FIRST:
+        try:
+            off = fetch_from_official_news()
+            if off:
+                off_res = classify_text(f"{off.get('title','')} . {off.get('description','')}")
+                if off_res["status"] != "unknown":
+                    off_res["source"] = off.get("link", "")
+                    off_res["published"] = off.get("published", "")
+                    off_res["checked_at"] = now.isoformat(timespec="minutes")
+                    off_res["raw_title"] = off.get("title", "")
+                    return off_res
+        except Exception as e:  # noqa
+            err = str(e)
+
     fetchers = ([lambda ch=ch: fetch_from_telegram_channel(ch) for ch in TG_CHANNELS]
                 + [fetch_from_news_rss, fetch_from_balad])
     for fetcher in fetchers:
