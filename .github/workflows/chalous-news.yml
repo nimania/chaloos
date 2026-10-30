@@ -2,12 +2,20 @@ name: دایجست خبرهای چالوس
 
 on:
   schedule:
-    - cron: "30 3 * * *"    # ۷:۰۰ صبح به وقت تهران
-    - cron: "30 14 * * *"   # ۱۸:۰۰ عصر به وقت تهران
+    - cron: "*/30 * * * *"  # بررسی هر ۳۰ دقیقه؛ فقط پست‌های منتشرنشده
   workflow_dispatch:
+  push:
+    paths:
+      - "news_digest.py"
+      - "chalous_status.py"
+      - ".github/workflows/chalous-news.yml"
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: chalous-news
+  cancel-in-progress: false
 
 jobs:
   news:
@@ -25,3 +33,13 @@ jobs:
           TG_CHANNEL: chaluscity1
           NEWS_LIMIT: "5"
         run: python news_digest.py
+      - name: ذخیرهٔ شناسهٔ پست‌های منتشرشده
+        run: |
+          if [[ -n "$(git status --porcelain news_state.json)" ]]; then
+            git config user.name "chalous-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add news_state.json
+            git commit -m "record published road reports [skip ci]"
+            git pull --rebase
+            git push
+          fi
