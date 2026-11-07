@@ -1,0 +1,56 @@
+name: بازنشر همه پست‌های چالوس آنلاین
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "mirror_chalousonline.py"
+      - ".github/workflows/chalousonline-mirror.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: chalousonline-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: نصب وابستگی‌ها
+        run: pip install -r requirements.txt
+      - name: انتشار هر پست تازه بدون فیلتر موضوعی
+        id: mirror
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALERT_CHAT_ID: "@chaloosradar"
+          CHALOUSONLINE_STATE_FILE: "chalousonline_state.json"
+          MAX_SOURCE_PAGES: "40"
+        run: python mirror_chalousonline.py
+      - name: ذخیره شناسه آخرین پست با تلاش مجدد هنگام تعارض گیت
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "$(git status --porcelain chalousonline_state.json)" ]]; then
+            git config user.name "chalous-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add chalousonline_state.json
+            git commit -m "checkpoint ChalousOnline mirroring [skip ci]"
+            for i in 1 2 3 4; do
+              git pull --rebase && git push && exit 0
+              echo "Push conflict, retry $i"
+              sleep 4
+            done
+            echo "Could not persist mirror checkpoint" >&2
+            exit 1
+          else
+            echo "No cursor change."
+          fi
