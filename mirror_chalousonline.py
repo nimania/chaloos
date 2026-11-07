@@ -128,16 +128,40 @@ def collect_new(cursor):
         raise RuntimeError("Telegram backlog exceeds MAX_SOURCE_PAGES; refusing to skip posts.")
     return [gathered[k] for k in sorted(gathered)], cursor, False
 
-def bot_call(method, payload):
-    r = requests.post(
-        "https://api.telegram.org/bot" + BOT_TOKEN + "/" + method,
-        json={"chat_id": DESTINATION, **payload}, timeout=65
-    )
-    r.raise_for_status()
-    response = r.json()
-    if not response.get("ok"):
-        raise RuntimeError(response.get("description", "Telegram API rejected post."))
-    return response
+# Pace channel messages, and obey retry_after if Telegram reports a flood limit.
+LAST_REQUEST = 0.0
+
+def bot_call(method, payload, files=None):
+    global LAST_REQUEST
+    endpoint = "https://api.telegram.org/bot" + BOT_TOKEN + "/" + method
+    for attempt in range(6):
+        idle = time.monotonic() - LAST_REQUEST
+        if idle < 2.5:
+            time.sleep(2.5 - idle)
+        LAST_REQUEST = time.monotonic()
+        if files:
+            for filedef in files.values():
+                filedef[1].seek(0)
+            r = requests.post(endpoint, data={"chat_id": DESTINATION, **payload}, files=files, timeout=90)
+        else:
+            r = requests.post(endpoint, json={"chat_id": DESTINATION, **payload}, timeout=70)
+        try:
+            response = r.json()
+        except ValueError:
+            response = {}
+        if r.status_code == 429:
+            pause = int(response.get("parameters", {}).get("retry_after", 8 + attempt * 4))
+            print("Telegram rate limit; retry after", pause, "seconds", flush=True)
+            time.sleep(min(180, max(3, pause + 1)))
+            continue
+        if r.status_code >= 500 and attempt < 5:
+            time.sleep(5 * (attempt + 1))
+            continue
+        r.raise_for_status()
+        if not response.get("ok"):
+            raise RuntimeError(response.get("description", "Telegram API rejected post."))
+        return response
+    raise RuntimeError("Telegram rate-limit retry attempts exceeded.")
 
 def send_text(text):
     # Telegram limits a regular text message to 4096 characters.
@@ -145,35 +169,56 @@ def send_text(text):
         part, text = text[:3900], text[3900:]
         bot_call("sendMessage", {"text": part, "disable_web_page_preview": True})
 
+def send_media(kind, url, post_id):
+    method = "sendPhoto" if kind == "photo" else "sendVideo"
+    try:
+        bot_call(method, {kind: url})
+        return True
+    except Exception as exc:
+        # Telegram often rejects CDN URL fetching (HTTP 400). Try uploading
+        # downloaded bytes instead of discarding the photo or video.
+        print("Direct media URL rejected:", post_id, kind, type(exc).__name__, flush=True)
+    try:
+        from tempfile import SpooledTemporaryFile
+        with requests.get(url, headers=HEADERS, stream=True, timeout=HTTP_TIMEOUT) as source:
+            source.raise_for_status()
+            length = int(source.headers.get("content-length") or 0)
+            cap = 45 * 1024 * 1024
+            if length > cap:
+                raise RuntimeError("Media exceeds safe upload limit")
+            media_type = source.headers.get("Content-Type", "").split(";")[0].strip()
+            if not media_type or "/" not in media_type:
+                media_type = "image/jpeg" if kind == "photo" else "video/mp4"
+            with SpooledTemporaryFile(max_size=5 * 1024 * 1024) as tmp:
+                total = 0
+                for chunk in source.iter_content(chunk_size=256 * 1024):
+                    if chunk:
+                        total += len(chunk)
+                        if total > cap:
+                            raise RuntimeError("Media too large to upload")
+                        tmp.write(chunk)
+                if not total:
+                    raise RuntimeError("Media download was empty")
+                tmp.seek(0)
+                filename = "chalousonline.jpg" if kind == "photo" else "chalousonline.mp4"
+                bot_call(method, {}, files={kind: (filename, tmp, media_type)})
+        return True
+    except Exception as exc:
+        print("Media could not be uploaded:", post_id, kind, type(exc).__name__, str(exc)[:150], flush=True)
+        return False
+
 def publish(post):
     assets = [("photo", url) for url in post["photos"]]
     assets += [("video", url) for url in post["videos"]]
     incomplete = bool(post["has_media"] and not assets)
-    if len(assets) > 1:
-        # Albums accept at most 10 entries per request.
-        try:
-            for offset in range(0, len(assets), 10):
-                batch = assets[offset: offset + 10]
-                if len(batch) == 1:
-                    kind, url = batch[0]
-                    bot_call("sendPhoto" if kind == "photo" else "sendVideo", {kind: url})
-                else:
-                    bot_call("sendMediaGroup", {
-                        "media": [{"type": kind, "media": url} for kind, url in batch]
-                    })
-        except Exception as exc:
+    # Individual uploads allow a per-file fallback when Telegram cannot fetch
+    # remote CDN URLs. The rate limit is respected for each channel message.
+    for kind, url in assets:
+        if not send_media(kind, url, post["id"]):
             incomplete = True
-            print("Album unavailable:", post["id"], type(exc).__name__, str(exc)[:140], flush=True)
-    elif assets:
-        kind, url = assets[0]
-        try:
-            bot_call("sendPhoto" if kind == "photo" else "sendVideo", {kind: url})
-        except Exception as exc:
-            incomplete = True
-            print("Attachment unavailable:", post["id"], type(exc).__name__, str(exc)[:140], flush=True)
     body = post["text"]
     if incomplete:
-        body = (body + "\n\n" if body else "") + "📎 پیوست این پست در پیش‌نمایش عمومی تلگرام قابل انتقال نبود."
+        body = (body + "\n\n" if body else "") + "📎 بخشی از پیوست‌های این پست در پیش‌نمایش عمومی تلگرام قابل انتقال نبود."
     if not body and not assets:
         body = "📎 پست رسانه‌ای تازه؛ محتوای آن از پیش‌نمایش عمومی قابل دریافت نبود."
     if body:
@@ -191,12 +236,12 @@ def main():
         print("Initial cursor saved:", baseline, "No old posts published.", flush=True)
         return 0
     partial = 0
-    for post in posts:
+    for post in posts[:80]:
         partial += int(publish(post))
         save_state(post["id"])  # Commit each success so retries do not duplicate older posts.
         print("Mirrored:", post["id"], "media_partial=", bool(partial), flush=True)
         time.sleep(0.5)
-    print("Completed: new_posts=", len(posts), "posts_with_missing_media=", partial, flush=True)
+    print("Completed: new_posts=", min(80, len(posts)), "remaining_for_later=", max(0, len(posts)-80), "posts_with_missing_media=", partial, flush=True)
     return 0
 
 if __name__ == "__main__":
