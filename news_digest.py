@@ -27,17 +27,23 @@ def api(method, payload):
 
 
 def publish_post(post):
-    """Publish every text segment and all publicly accessible media."""
+    """Send complete text and every public photo/video, with caption if short."""
     body = post.get("text", "").strip()
     media = ([("photo", url) for url in post.get("photos", [])]
              + [("video", url) for url in post.get("videos", [])])
+    caption = body if media and len(body.encode("utf-16-le")) // 2 <= 900 else ""
+    caption_sent = False
     sent = False
     missing = False
     for kind, url in media:
-        if send_media(kind, url, post.get("source_url", "")):
+        to_caption = caption if caption and not caption_sent else ""
+        if send_media(kind, url, post.get("source_url", ""), caption=to_caption):
             sent = True
+            caption_sent = caption_sent or bool(to_caption)
         else:
             missing = True
+    if caption_sent:
+        body = ""
     if missing:
         body += ("\n\n" if body else "") + (
             "📎 بعضی فایل‌های رسانه‌ای از پیش‌نمایش عمومی قابل دریافت نبودند. "
