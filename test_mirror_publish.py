@@ -99,6 +99,35 @@ class TelegramPublishingTests(unittest.TestCase):
         self.assertEqual(items[0]["assets"], [])
         self.assertTrue(items[0]["hidden_media"])
 
+    def test_weather_source_keeps_local_forecasts_and_road_hazards(self):
+        self.assertTrue(mirror.should_publish({
+            "text": "پیش‌بینی ۵ روزه هوای مازندران؛ بارش در ارتفاعات چالوس"
+        }, mode="regional_weather"))
+        self.assertTrue(mirror.should_publish({
+            "text": "هشدار یخبندان و مه گرفتگی محور کندوان"
+        }, mode="regional_weather"))
+        self.assertTrue(mirror.should_publish({
+            "text": "پیش‌بینی ۳ روزه دریای کاسپین؛ ارتفاع موج ۰.۷ متر"
+        }, mode="regional_weather"))
+
+    def test_weather_source_excludes_foreign_and_nonweather_posts(self):
+        self.assertFalse(mirror.should_publish({
+            "text": "#منهای_مازندران\nگردباد قدرتمند در شیلی!"
+        }, mode="regional_weather"))
+        self.assertFalse(mirror.should_publish({
+            "text": "خبر جشنواره فروش محصولات محلی مازندران"
+        }, mode="regional_weather"))
+        self.assertFalse(mirror.should_publish({
+            "text": "☀️"
+        }, mode="regional_weather"))
+        self.assertFalse(mirror.should_publish({
+            "text": "پیش بینی بارش برف در کانادا"
+        }, mode="regional_weather"))
+        # No filter ever affects JadehChalus or ChalousOnline mirrors.
+        self.assertTrue(mirror.should_publish({
+            "text": "یک پست نامرتبط"
+        }, mode="all"))
+
     def test_text_only_keeps_full_message(self):
         with patch.object(mirror, "bot_call", side_effect=self.fake_bot_call):
             mirror.publish(self.post(has_media=False, text="فقط متن"))
