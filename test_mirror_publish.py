@@ -74,6 +74,31 @@ class TelegramPublishingTests(unittest.TestCase):
         self.assertEqual(len(replies), 1)
         self.assertEqual(replies[0][1], 431)
 
+    def test_parse_keeps_source_order_for_mixed_media(self):
+        page = (
+            '<div data-post="jadeh_chalus/123">'
+            '<video src="https://example.org/a.mp4"></video>'
+            '<a class="tgme_widget_message_photo_wrap" '
+            'style="background-image:url(&#39;https://example.org/b.jpg&#39;)"></a>'
+            '</div>'
+        )
+        items = mirror.parse_posts(page)
+        self.assertEqual(items[0]["assets"], [
+            ("video", "https://example.org/a.mp4"),
+            ("photo", "https://example.org/b.jpg"),
+        ])
+
+    def test_video_thumbnail_is_not_reposted_as_photo(self):
+        page = (
+            '<div data-post="jadeh_chalus/456">'
+            '<span class="tgme_widget_message_video" '
+            'style="background-image:url(&#39;https://example.org/thumb.jpg&#39;)"></span>'
+            '</div>'
+        )
+        items = mirror.parse_posts(page)
+        self.assertEqual(items[0]["assets"], [])
+        self.assertTrue(items[0]["hidden_media"])
+
     def test_text_only_keeps_full_message(self):
         with patch.object(mirror, "bot_call", side_effect=self.fake_bot_call):
             mirror.publish(self.post(has_media=False, text="فقط متن"))
