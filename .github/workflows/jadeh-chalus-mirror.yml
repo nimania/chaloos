@@ -1,0 +1,57 @@
+name: بازنشر کامل پست‌های جاده چالوس
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "mirror_chalousonline.py"
+      - ".github/workflows/jadeh-chalus-mirror.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jadeh-chalus-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: نصب وابستگی‌ها
+        run: pip install -r requirements.txt
+      - name: بازنشر همه پست‌های تازه با تصاویر و ویدئوها، بدون فیلتر
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALERT_CHAT_ID: "@chaloosradar"
+          SOURCE_CHANNEL: "jadeh_chalus"
+          MIRROR_STATE_FILE: "jadeh_chalus_state.json"
+          MIRROR_BOOTSTRAP: "recent"
+          MAX_SOURCE_PAGES: "80"
+        run: python mirror_chalousonline.py
+      - name: ذخیره شناسه آخرین پست پردازش‌شده
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "$(git status --porcelain jadeh_chalus_state.json)" ]]; then
+            git config user.name "chalous-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add jadeh_chalus_state.json
+            git commit -m "checkpoint JadehChalus mirroring [skip ci]"
+            for i in 1 2 3 4; do
+              git pull --rebase && git push && exit 0
+              echo "Checkpoint push conflict; retry $i"
+              sleep 4
+            done
+            echo "Could not persist mirror checkpoint" >&2
+            exit 1
+          else
+            echo "No cursor change."
+          fi
