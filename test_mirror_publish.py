@@ -76,7 +76,7 @@ class TelegramPublishingTests(unittest.TestCase):
 
     def test_parse_keeps_source_order_for_mixed_media(self):
         page = (
-            '<div data-post="jadeh_chalus/123">'
+            '<div data-post="chalousonline/123">'
             '<video src="https://example.org/a.mp4"></video>'
             '<a class="tgme_widget_message_photo_wrap" '
             'style="background-image:url(&#39;https://example.org/b.jpg&#39;)"></a>'
@@ -90,7 +90,7 @@ class TelegramPublishingTests(unittest.TestCase):
 
     def test_video_thumbnail_is_not_reposted_as_photo(self):
         page = (
-            '<div data-post="jadeh_chalus/456">'
+            '<div data-post="chalousonline/456">'
             '<span class="tgme_widget_message_video" '
             'style="background-image:url(&#39;https://example.org/thumb.jpg&#39;)"></span>'
             '</div>'
