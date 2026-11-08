@@ -47,13 +47,14 @@ def strip_source_footer(text):
         lines.pop()
     return "\n".join(lines).strip()
 
-def parse_posts(page):
+def parse_posts(page, source=None):
+    source = (source or SOURCE).strip().lstrip('@').lower()
     marks = list(re.finditer(r'data-post=["\x27]([^"\x27]+)["\x27]', page))
     out = {}
     for i, match in enumerate(marks):
         slug = html.unescape(match.group(1))
         channel, sep, ident = slug.rpartition("/")
-        if not sep or channel.lower() != SOURCE or not ident.isdigit():
+        if not sep or channel.lower() != source or not ident.isdigit():
             continue
         snippet = page[match.start(): marks[i + 1].start() if i + 1 < len(marks) else len(page)]
         tm = re.search(
@@ -61,6 +62,8 @@ def parse_posts(page):
             snippet, re.S | re.I
         )
         content = decode_text(tm.group(1)) if tm else ""
+        time_tag = re.search(r'<time\b[^>]*\bdatetime=["\x27]([^"\x27]+)', snippet, re.I)
+        published = time_tag.group(1) if time_tag else ""
         # Read actual photo wrappers and video players in their visual order.
         # Generic background images can be *video thumbnails*, not photos.
         media_order = []
@@ -106,10 +109,10 @@ def parse_posts(page):
             snippet, re.I
         ))
         out[int(ident)] = {
-            "id": int(ident), "text": content, "photos": photos,
+            "id": int(ident), "text": content, "published": published, "photos": photos,
             "videos": videos, "assets": assets, "has_media": media_hint,
             "hidden_media": inaccessible_video or inaccessible_other,
-            "source_url": "https://t.me/" + SOURCE + "/" + ident,
+            "source_url": "https://t.me/" + source + "/" + ident,
         }
     return list(out.values())
 
