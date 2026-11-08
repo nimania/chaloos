@@ -1,0 +1,97 @@
+name: پایش هواشناسی مازندران برای راهیاب چالوس
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "mirror_chalousonline.py"
+      - ".github/workflows/mazandaran-weather-mirror.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mazandaran-weather-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main  # Always read newest cursor even if a queued push used an older SHA
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: نصب وابستگی‌ها
+        run: pip install -r requirements.txt
+      - name: آزمون کپشن، آلبوم و اتصال ادامه متن
+        run: python -m unittest -q test_mirror_publish.py
+      - name: بازنشر گزینشی اخبار هواشناسی مرتبط با مازندران و راه‌های شمال
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALERT_CHAT_ID: "@chaloosradar"
+          SOURCE_CHANNEL: "mazandaran_weather"
+          MIRROR_STATE_FILE: "mazandaran_weather_state.json"
+          MIRROR_BOOTSTRAP: "skip"
+          MIRROR_FILTER: "regional_weather"
+          MAX_SOURCE_PAGES: "40"
+        run: python mirror_chalousonline.py
+      - name: ثبت ایمن آخرین شناسه بدون تعارض تاریخچه Git
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, json, base64, time
+          from pathlib import Path
+          import requests
+
+          state_file = Path("mazandaran_weather_state.json")
+          if not state_file.exists():
+              print("No local state file; no checkpoint")
+              raise SystemExit(0)
+          local_id = int(json.loads(state_file.read_text(encoding="utf-8")).get("last_id", 0))
+          if local_id <= 0:
+              print("No processed post to checkpoint")
+              raise SystemExit(0)
+          repo = os.environ["GITHUB_REPOSITORY"]
+          endpoint = f"https://api.github.com/repos/{repo}/contents/mazandaran_weather_state.json"
+          headers = {
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          content = base64.b64encode(
+              (json.dumps({"channel": "mazandaran_weather", "last_id": local_id}, ensure_ascii=False, indent=2) + "\n").encode()
+          ).decode()
+          for attempt in range(6):
+              response = requests.get(endpoint, headers=headers, timeout=30)
+              response.raise_for_status()
+              info = response.json()
+              raw = base64.b64decode(info["content"])
+              remote_id = int(json.loads(raw).get("last_id", 0))
+              if local_id <= remote_id:
+                  print(f"Cursor current: remote={remote_id} local={local_id}. No rollback.")
+                  break
+              result = requests.put(endpoint, headers=headers, timeout=30, json={
+                  "message": "checkpoint MazandaranWeather mirroring [skip ci]",
+                  "branch": "main",
+                  "sha": info["sha"],
+                  "content": content,
+              })
+              if result.status_code in (409, 422):
+                  print("Concurrent cursor update; retry", attempt + 1, flush=True)
+                  time.sleep(attempt + 1)
+                  continue
+              result.raise_for_status()
+              print(f"Cursor advanced from {remote_id} to {local_id}")
+              break
+          else:
+              raise RuntimeError("Could not persist source cursor after retries")
+          PY
