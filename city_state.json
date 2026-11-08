@@ -1,5 +1,16 @@
 {
-  "sources": {},
+  "sources": {
+    "khabarforisari": 228185,
+    "babolnews": 114479,
+    "amolnoor": 174297,
+    "nowshahrcity1": 1943,
+    "ramsar11": 56557,
+    "ostandarimazandaran_ir": 12531
+  },
   "published": {},
-  "last_run": null
+  "last_run": "2026-11-08T08:08:23.420428+00:00",
+  "daily": {
+    "date": "2026-11-08",
+    "count": 0
+  }
 }
