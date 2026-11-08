@@ -100,8 +100,6 @@ def parse_posts(page):
         inaccessible_other = bool(re.search(
             r'tgme_widget_message_(?:document|audio|voice|sticker|poll)', snippet, re.I
         ))
-        if videos:
-            photos = []
         media_hint = bool(re.search(
             r'tgme_widget_message_(?:photo|video|document|audio|voice|sticker|poll)',
             snippet, re.I
