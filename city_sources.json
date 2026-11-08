@@ -1,0 +1,81 @@
+{
+  "updated": "2026-11-08",
+  "editorial_policy": "Only timely local public-service updates; brief attributed excerpt and original link. New source media is not copied until reuse rights are confirmed for each newly added source.",
+  "channels": [
+    {
+      "handle": "khabarforisari",
+      "name": "خبر فوری ساری",
+      "city": "ساری",
+      "area": "مرکز مازندران",
+      "status": "active",
+      "page": "https://t.me/s/khabarforisari",
+      "media_permission": "not_yet_verified"
+    },
+    {
+      "handle": "babolnews",
+      "name": "بابل نیوز",
+      "city": "بابل",
+      "area": "مرکز مازندران",
+      "status": "active",
+      "page": "https://t.me/s/BabolNews",
+      "media_permission": "not_yet_verified"
+    },
+    {
+      "handle": "amolnoor",
+      "name": "آمل نور",
+      "city": "آمل",
+      "area": "مرکز مازندران",
+      "status": "active",
+      "page": "https://t.me/s/AmolNoor",
+      "media_permission": "not_yet_verified"
+    },
+    {
+      "handle": "nowshahrcity1",
+      "name": "نوشهر سیتی",
+      "city": "نوشهر",
+      "area": "غرب مازندران",
+      "status": "active",
+      "page": "https://t.me/s/nowshahrcity1",
+      "media_permission": "not_yet_verified"
+    },
+    {
+      "handle": "ramsar11",
+      "name": "اخبار رامسر و تنکابن",
+      "city": "رامسر",
+      "covers": [
+        "رامسر",
+        "تنکابن"
+      ],
+      "area": "غرب مازندران",
+      "status": "active",
+      "page": "https://t.me/s/Ramsar11",
+      "media_permission": "not_yet_verified"
+    },
+    {
+      "handle": "ostandarimazandaran_ir",
+      "name": "استانداری مازندران",
+      "city": null,
+      "area": "استانی",
+      "status": "active",
+      "page": "https://t.me/s/ostandarimazandaran_ir",
+      "media_permission": "not_yet_verified"
+    }
+  ],
+  "candidate_sources": [
+    {
+      "handle": "emarateshahrdarisari",
+      "city": "ساری",
+      "reason": "Official municipal source; assess freshness and editorial value before activation."
+    },
+    {
+      "handle": "bandpeynews",
+      "city": "بابل",
+      "reason": "Additional Babol district coverage; independent quality review needed."
+    },
+    {
+      "handle": "amolcitynews",
+      "city": "آمل",
+      "reason": "Small alternative outlet; verify activity before activation."
+    }
+  ]
+}
