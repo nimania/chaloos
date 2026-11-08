@@ -21,6 +21,7 @@ DESTINATION = os.getenv("ALERT_CHAT_ID", "@chaloosradar").strip()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 STATE_PATH = Path(os.getenv("MIRROR_STATE_FILE", os.getenv("CHALOUSONLINE_STATE_FILE", "chalousonline_state.json")))
 BOOTSTRAP = os.getenv("MIRROR_BOOTSTRAP", "skip").strip().lower()
+MIRROR_FILTER = os.getenv("MIRROR_FILTER", "all").strip().lower()
 MAX_PAGES = int(os.getenv("MAX_SOURCE_PAGES", "40"))
 HTTP_TIMEOUT = 30
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"}
@@ -111,6 +112,62 @@ def parse_posts(page):
             "source_url": "https://t.me/" + SOURCE + "/" + ident,
         }
     return list(out.values())
+
+
+def should_publish(post, mode=None):
+    """Restrict weather-source items to regional weather and road conditions.
+
+    The normal JadehChalus and ChalousOnline mirrors remain unfiltered.
+    A skipped source ID still advances the independent per-source cursor,
+    so routine off-topic posts do not get reconsidered forever.
+    """
+    mode = (mode or MIRROR_FILTER).lower()
+    if mode == "all":
+        return True
+    if mode != "regional_weather":
+        raise ValueError("Unknown mirror filter: " + mode)
+    text = post.get("text", "")
+    text = html.unescape(text).lower().replace("ي", "ی").replace("ك", "ک")
+    text = text.replace("\u200c", " ").replace("ـ", "")
+    if not text.strip():
+        return False  # No location/forecast context in a media-only post.
+    # The channel explicitly tags international weather stories this way.
+    if re.search(r"#\s*منهای[\s_]*مازندران", text):
+        return False
+    # Only locally actionable weather reporting, forecasts, and hazards.
+    region = (
+        "مازندران", "چالوس", "کندوان", "مرزن آباد", "مرزناباد",
+        "کلاردشت", "نوشهر", "نمک آبرود", "رامسر", "تنکابن",
+        "عباس آباد", "سلمانشهر", "متل قو", "نور", "محمودآباد",
+        "آمل", "بابل", "بابلسر", "ساری", "قائمشهر", "بهشهر",
+        "سوادکوه", "هراز", "فیروزکوه", "سیاه بیشه",
+        "آزادراه تهران شمال", "دریای کاسپین", "دریای خزر",
+    )
+    weather = (
+        "هواشناسی", "پیش بینی", "پیش بینی", "پیش‌بینی",
+        "رگبار", "بارندگی", "بارش", "باران", "برف", "یخبندان",
+        "یخ زدگی", "مه گرفتگی", "تگرگ", "رعدوبرق", "رعد و برق",
+        "طوفان", "توفان", "وزش باد", "سرما", "سرمای", "هوای سرد",
+        "گرما", "دمای", "دما", "وضعیت دریا", "هشدار جوی",
+        "آب و هوا", "آب‌وهوا", "سیلاب", "سیل", "ارتفاعات",
+        "ابر", "جبهه", "روزنگار", "مواج", "موج", "دید افقی",
+        "هشدار هوا", "پیش آگاهی", "پیش‌آگاهی",
+    )
+    # Restrict to weather or road hazards even if a local town is named.
+    if not any(x in text for x in weather):
+        return False
+    # Local reference is preferable. Broad forecasts without explicit
+    # province names are also valid from this dedicated local-weather feed,
+    # but international/other-province posts must not leak into the mirror.
+    foreign = (
+        "شیلی", "سانتیاگو", "ژاپن", "آمریکا", "اروپا", "کانادا",
+        "هند", "چین", "استرالیا", "ترکیه", "پاکستان",
+        "تهران", "اصفهان", "خوزستان", "فارس", "کرمان", "البرز",
+    )
+    if not any(x in text for x in region) and any(x in text for x in foreign):
+        return False
+    return True
+
 
 def fetch_page(before=None):
     query = "?" + urlencode({"before": before}) if before else ""
@@ -403,6 +460,10 @@ def main():
         except (OSError, ValueError):
             pass
     for post in posts[:80]:
+        if not should_publish(post):
+            save_state(post["id"])
+            print("Filtered off-topic post:", post["id"], "mode=", MIRROR_FILTER, flush=True)
+            continue
         if post["source_url"] in legacy_links:
             save_state(post["id"])
             print("Previously published by digest:", post["id"], flush=True)
