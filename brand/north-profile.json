@@ -1,0 +1,84 @@
+{
+  "brand": "نشانی: شمال",
+  "phase": "1",
+  "focus": "مازندران",
+  "mission": "اطلاعات روزمره و قابل استفاده دربارهٔ زندگی، راه‌ها، هواشناسی، خدمات، اقتصاد و فرهنگ شمال ایران",
+  "promise": "شمال را بهتر بشناسیم، راحت‌تر زندگی کنیم.",
+  "telegram": {
+    "display_name": "نشانی: شمال",
+    "handle": "@chaloosradar",
+    "url": "https://t.me/chaloosradar",
+    "display_name_updated_by_user": true,
+    "username_change_planned": false,
+    "bio_draft": "نشانی: شمال | خبرها و اطلاعات کاربردی شمال ایران؛ فعلاً با تمرکز بر مازندران. راه‌ها، هواشناسی، زندگی شهری، بازار، فرهنگ و سفر."
+  },
+  "geography": {
+    "phase_1": "مازندران",
+    "phase_2": "گیلان",
+    "phase_3": "گلستان",
+    "coverage_claim": "تمرکز فعلی بر مازندران؛ پوشش مناطق دیگر تنها پس از تأمین منابع معتبر"
+  },
+  "taxonomy": [
+    {
+      "key": "roads",
+      "name": "راه‌ها",
+      "icon": "🚗",
+      "hashtag": "#راه‌ها"
+    },
+    {
+      "key": "weather",
+      "name": "هواشناسی",
+      "icon": "🌦",
+      "hashtag": "#هواشناسی"
+    },
+    {
+      "key": "city",
+      "name": "شهر و خدمات",
+      "icon": "🏙",
+      "hashtag": "#شهر_و_خدمات"
+    },
+    {
+      "key": "economy",
+      "name": "بازار و کسب‌وکار",
+      "icon": "🛍",
+      "hashtag": "#بازار"
+    },
+    {
+      "key": "environment",
+      "name": "محیط‌زیست",
+      "icon": "🌿",
+      "hashtag": "#محیط_زیست"
+    },
+    {
+      "key": "culture",
+      "name": "فرهنگ و گردشگری",
+      "icon": "🎭",
+      "hashtag": "#فرهنگ_و_سفر"
+    }
+  ],
+  "design": {
+    "visual_style": "مینیمال، محلی، دقیق و خبری؛ نه جنجالی",
+    "typography": "Vazirmatn",
+    "palette": {
+      "forest": "#234A48",
+      "sea": "#4B8991",
+      "paper": "#F6F4EE",
+      "sand": "#C8B79E",
+      "alert": "#B94141"
+    },
+    "imagery": "تصاویر واقعی و اصیل مازندران با کنتراست قابل‌خواندن؛ بدون بازسازی ساختگی رویدادها"
+  },
+  "operations": {
+    "keep_existing_workflows": true,
+    "existing_sources": [
+      "@chaluscity1",
+      "@jadeh_chalus",
+      "@ChalousOnline",
+      "@Mazandaran_Weather"
+    ],
+    "avoid_mass_historical_repost": true,
+    "news_timing": "زمان انتشار خبر و زمان مشاهده را جداگانه بررسی کنید.",
+    "urgent_road_source": "پلیس راه و سامانهٔ ۱۴۱"
+  },
+  "created": "2026-11-08"
+}
