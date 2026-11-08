@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main  # Always read newest cursor even if a queued push used an older SHA
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
