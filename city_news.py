@@ -109,7 +109,10 @@ def classify(post, source):
     title = normalize(first_news_line(raw))
     if not title:
         return None
-    if any(term in text for term in EXCLUDE) and not any(term in title for term in ("خاموشی", "قطع", "سیلاب")):
+    # Local channels often append their advertising contact/footer to real news.
+    # Check the headline/lead rather than rejecting every post with a footer.
+    lead = text[:max(260, len(title))]
+    if any(term in lead for term in EXCLUDE) and not any(term in title for term in ("خاموشی", "قطع", "سیلاب")):
         return None
     city = choose_city(post, source)
     if not city:
