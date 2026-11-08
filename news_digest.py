@@ -6,7 +6,7 @@ import json
 import requests
 
 from chalous_status import fetch_channel_posts
-from mirror_chalousonline import send_media, send_text
+from mirror_chalousonline import publish
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 ALERT_CHAT_ID = os.environ.get("ALERT_CHAT_ID", "").strip()
@@ -27,32 +27,19 @@ def api(method, payload):
 
 
 def publish_post(post):
-    """Send complete text and every public photo/video, with caption if short."""
-    body = post.get("text", "").strip()
-    media = ([("photo", url) for url in post.get("photos", [])]
-             + [("video", url) for url in post.get("videos", [])])
-    caption = body if media and len(body.encode("utf-16-le")) // 2 <= 900 else ""
-    caption_sent = False
-    sent = False
-    missing = False
-    for kind, url in media:
-        to_caption = caption if caption and not caption_sent else ""
-        if send_media(kind, url, post.get("source_url", ""), caption=to_caption):
-            sent = True
-            caption_sent = caption_sent or bool(to_caption)
-        else:
-            missing = True
-    if caption_sent:
-        body = ""
-    if missing:
-        body += ("\n\n" if body else "") + (
-            "📎 بعضی فایل‌های رسانه‌ای از پیش‌نمایش عمومی قابل دریافت نبودند. "
-            "نسخه اصلی: " + post.get("source_url", "")
-        )
-    if body:
-        send_text(body)
-    elif not sent:
-        print("Public media unavailable:", post.get("source_url"), flush=True)
+    """Use the same album-and-caption publisher as the full channel mirrors."""
+    source_url = post.get("source_url", "")
+    photos = post.get("photos", [])
+    videos = post.get("videos", [])
+    publish({
+        "id": source_url.rsplit("/", 1)[-1],
+        "text": post.get("text", ""),
+        "photos": photos,
+        "videos": videos,
+        "has_media": bool(photos or videos),
+        "hidden_media": False,
+        "source_url": source_url,
+    })
 
 
 def main():
