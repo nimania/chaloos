@@ -60,19 +60,40 @@ def parse_posts(page):
             snippet, re.S | re.I
         )
         content = decode_text(tm.group(1)) if tm else ""
-        photos = []
-        for u in re.findall(r'background-image:\s*url\(["\x27]?([^)"\x27]+)', snippet, re.I):
-            u = html.unescape(u)
-            if u.startswith("https://") and u not in photos:
-                photos.append(u)
-        videos = []
-        for u in re.findall(r'<(?:video|source)\b[^>]*\bsrc=["\x27]([^"\x27]+)', snippet, re.I):
-            u = html.unescape(u)
-            if u.startswith("https://") and u not in videos:
-                videos.append(u)
-        # Some video previews contain a still image; avoid sending it twice.
-        # Do NOT mistake a video thumbnail for the actual video: report a
-        # partial transfer when the public HTML hides the playable file.
+        # Read actual photo wrappers and video players in their visual order.
+        # Generic background images can be *video thumbnails*, not photos.
+        media_order = []
+        seen_media = set()
+        for tag in re.finditer(r"<(?:a|div)\b[^>]*>", snippet, re.I | re.S):
+            if "tgme_widget_message_photo_wrap" not in tag.group(0):
+                continue
+            photo = re.search(r'background-image:\s*url\(["\x27]?([^)"\x27]+)', tag.group(0), re.I)
+            if photo:
+                url = html.unescape(photo.group(1))
+                if url.startswith("https://") and url not in seen_media:
+                    media_order.append((tag.start(), "photo", url))
+                    seen_media.add(url)
+        for tag in re.finditer(r"<(?:video|source)\b[^>]*>", snippet, re.I | re.S):
+            match_url = re.search(r'\bsrc=["\x27]([^"\x27]+)', tag.group(0), re.I)
+            if match_url:
+                url = html.unescape(match_url.group(1))
+                if url.startswith("https://") and url not in seen_media:
+                    media_order.append((tag.start(), "video", url))
+                    seen_media.add(url)
+        # A public Telegram photo may not have a standard photo_wrap class.
+        # Use background images only if there is no video player in this post.
+        if not media_order and not re.search(r"tgme_widget_message_video", snippet, re.I):
+            for m in re.finditer(r'background-image:\s*url\(["\x27]?([^)"\x27]+)', snippet, re.I):
+                url = html.unescape(m.group(1))
+                if url.startswith("https://") and url not in seen_media:
+                    media_order.append((m.start(), "photo", url))
+                    seen_media.add(url)
+        media_order.sort(key=lambda item: item[0])
+        assets = [(kind, url) for _, kind, url in media_order]
+        photos = [url for kind, url in assets if kind == "photo"]
+        videos = [url for kind, url in assets if kind == "video"]
+        # When the original post combines photos and videos, do not discard
+        # its photos merely because video data is also present.
         inaccessible_video = bool(re.search(
             r'tgme_widget_message_video', snippet, re.I
         )) and not videos
@@ -86,8 +107,8 @@ def parse_posts(page):
             snippet, re.I
         ))
         out[int(ident)] = {
-            "id": int(ident), "text": content, "photos": photos[:10],
-            "videos": videos[:10], "has_media": media_hint,
+            "id": int(ident), "text": content, "photos": photos,
+            "videos": videos, "assets": assets, "has_media": media_hint,
             "hidden_media": inaccessible_video or inaccessible_other,
             "source_url": "https://t.me/" + SOURCE + "/" + ident,
         }
@@ -312,8 +333,10 @@ def publish(post):
     units to the media and send the remainder as a reply to that media, never
     as an unrelated channel post. Multiple files form an album whenever possible.
     """
-    assets = [("photo", url) for url in post.get("photos", [])]
-    assets += [("video", url) for url in post.get("videos", [])]
+    assets = post.get("assets")
+    if assets is None:
+        assets = [("photo", url) for url in post.get("photos", [])]
+        assets += [("video", url) for url in post.get("videos", [])]
     incomplete = bool(
         (post.get("has_media") and not assets) or post.get("hidden_media")
     )
