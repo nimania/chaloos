@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import requests
+from propaganda import is_pure_propaganda
 from mirror_chalousonline import parse_posts, bot_call
 
 SOURCES_FILE = Path(os.getenv("CITY_SOURCES_FILE", "city_sources.json"))
@@ -103,6 +104,8 @@ def choose_city(post, source):
 def classify(post, source):
     """Return (city, subject) for a local, useful civic post, else None."""
     raw = post.get("text", "")
+    if is_pure_propaganda(raw):
+        return None
     text = normalize(raw)
     if len(text) < 25:
         return None
@@ -224,6 +227,8 @@ def save_state(data):
 
 
 def publish_text(text):
+    if is_pure_propaganda(text):
+        return
     if DRY_RUN:
         print("DRY RUN:", text[:220], flush=True)
         return
