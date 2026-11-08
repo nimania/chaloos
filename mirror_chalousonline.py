@@ -71,6 +71,14 @@ def parse_posts(page):
             if u.startswith("https://") and u not in videos:
                 videos.append(u)
         # Some video previews contain a still image; avoid sending it twice.
+        # Do NOT mistake a video thumbnail for the actual video: report a
+        # partial transfer when the public HTML hides the playable file.
+        inaccessible_video = bool(re.search(
+            r'tgme_widget_message_video', snippet, re.I
+        )) and not videos
+        inaccessible_other = bool(re.search(
+            r'tgme_widget_message_(?:document|audio|voice|sticker|poll)', snippet, re.I
+        ))
         if videos:
             photos = []
         media_hint = bool(re.search(
@@ -80,6 +88,7 @@ def parse_posts(page):
         out[int(ident)] = {
             "id": int(ident), "text": content, "photos": photos[:10],
             "videos": videos[:10], "has_media": media_hint,
+            "hidden_media": inaccessible_video or inaccessible_other,
             "source_url": "https://t.me/" + SOURCE + "/" + ident,
         }
     return list(out.values())
@@ -219,7 +228,7 @@ def publish(post):
     """Publish media with its caption when possible, preserving complete text."""
     assets = [("photo", url) for url in post["photos"]]
     assets += [("video", url) for url in post["videos"]]
-    incomplete = bool(post["has_media"] and not assets)
+    incomplete = bool((post["has_media"] and not assets) or post.get("hidden_media"))
     body = post["text"]
     # A Telegram media caption has a tighter limit than a regular message.
     # Use a conservative bound to account for Unicode emoji UTF-16 units.
