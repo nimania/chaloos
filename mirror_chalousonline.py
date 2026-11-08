@@ -16,10 +16,11 @@ from urllib.parse import urlencode
 
 import requests
 
-SOURCE = "chalousonline"
+SOURCE = os.getenv("SOURCE_CHANNEL", "chalousonline").strip().lstrip("@").lower()
 DESTINATION = os.getenv("ALERT_CHAT_ID", "@chaloosradar").strip()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-STATE_PATH = Path(os.getenv("CHALOUSONLINE_STATE_FILE", "chalousonline_state.json"))
+STATE_PATH = Path(os.getenv("MIRROR_STATE_FILE", os.getenv("CHALOUSONLINE_STATE_FILE", "chalousonline_state.json")))
+BOOTSTRAP = os.getenv("MIRROR_BOOTSTRAP", "skip").strip().lower()
 MAX_PAGES = int(os.getenv("MAX_SOURCE_PAGES", "40"))
 HTTP_TIMEOUT = 30
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"}
@@ -35,13 +36,13 @@ def decode_text(fragment):
     return strip_source_footer(fragment)
 
 def strip_source_footer(text):
-    # The original source name is an internal audit field, not copy in the post.
+    """Remove the channel's repetitive promotional footer, not the news text."""
     lines = text.splitlines()
-    while lines and (
-        not lines[-1].strip()
-        or re.fullmatch(r"(?:🆔\s*)?@chalousonline\s*", lines[-1].strip(), re.I)
-        or re.fullmatch(r"https?://(?:t\.me|telegram\.me)/(?:s/)?chalousonline/?", lines[-1].strip(), re.I)
-    ):
+    handle = re.compile(r"(?:🆔\\s*)?@" + re.escape(SOURCE) + r"\\s*$", re.I)
+    link = re.compile(r"https?://(?:t\\.me|telegram\\.me)/(?:s/)?" + re.escape(SOURCE) + r"/?\\s*$", re.I)
+    while lines and (not lines[-1].strip() or handle.fullmatch(lines[-1].strip()) or link.fullmatch(lines[-1].strip())):
+        lines.pop()
+    if lines and re.search(r"کان[\\sـ]*ال\\s+ج[\\sـ]*اده\\s+چ[\\sـ]*ال[\\sـ]*وس", lines[-1]):
         lines.pop()
     return "\n".join(lines).strip()
 
@@ -116,6 +117,10 @@ def collect_new(cursor):
                 gathered[p["id"]] = p
         earliest = min(ids)
         if cursor == 0:
+            if BOOTSTRAP == "recent":
+                # Import all posts on the currently visible public page on first run.
+                # Deep backfills need a separate safe import to avoid flooding users.
+                return [gathered[k] for k in sorted(gathered)], 0, False
             return [], max(ids), True
         if earliest <= cursor:
             reached = True
@@ -200,7 +205,7 @@ def send_media(kind, url, post_id):
                 if not total:
                     raise RuntimeError("Media download was empty")
                 tmp.seek(0)
-                filename = "chalousonline.jpg" if kind == "photo" else "chalousonline.mp4"
+                filename = SOURCE + (".jpg" if kind == "photo" else ".mp4")
                 bot_call(method, {}, files={kind: (filename, tmp, media_type)})
         return True
     except Exception as exc:
@@ -218,7 +223,10 @@ def publish(post):
             incomplete = True
     body = post["text"]
     if incomplete:
-        body = (body + "\n\n" if body else "") + "📎 بخشی از پیوست‌های این پست در پیش‌نمایش عمومی تلگرام قابل انتقال نبود."
+        body = (body + "\n\n" if body else "") + (
+            "📎 بخشی از فایل‌های این پست در نمای عمومی تلگرام قابل دریافت نبود. "
+            "مشاهدهٔ نسخهٔ اصلی: " + post["source_url"]
+        )
     if not body and not assets:
         body = "📎 پست رسانه‌ای تازه؛ محتوای آن از پیش‌نمایش عمومی قابل دریافت نبود."
     if body:
@@ -236,7 +244,19 @@ def main():
         print("Initial cursor saved:", baseline, "No old posts published.", flush=True)
         return 0
     partial = 0
+    # The older road-news digest has already published selected posts from this
+    # source. On bootstrap, skip those exact links to avoid channel duplicates.
+    legacy_links = set()
+    if cursor == 0 and SOURCE == "jadeh_chalus":
+        try:
+            legacy_links = set(json.loads(Path("news_state.json").read_text(encoding="utf-8")).get("published", []))
+        except (OSError, ValueError):
+            pass
     for post in posts[:80]:
+        if post["source_url"] in legacy_links:
+            save_state(post["id"])
+            print("Previously published by digest:", post["id"], flush=True)
+            continue
         partial += int(publish(post))
         save_state(post["id"])  # Commit each success so retries do not duplicate older posts.
         print("Mirrored:", post["id"], "media_partial=", bool(partial), flush=True)
