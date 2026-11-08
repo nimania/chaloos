@@ -78,7 +78,32 @@
     ],
     "avoid_mass_historical_repost": true,
     "news_timing": "زمان انتشار خبر و زمان مشاهده را جداگانه بررسی کنید.",
-    "urgent_road_source": "پلیس راه و سامانهٔ ۱۴۱"
+    "urgent_road_source": "پلیس راه و سامانهٔ ۱۴۱",
+    "city_news": {
+      "status": "active",
+      "cities": [
+        "ساری",
+        "بابل",
+        "آمل",
+        "نوشهر",
+        "رامسر",
+        "تنکابن"
+      ],
+      "channels": [
+        "@khabarforisari",
+        "@BabolNews",
+        "@AmolNoor",
+        "@nowshahrcity1",
+        "@ramsar11",
+        "@ostandarimazandaran_ir"
+      ],
+      "workflow": ".github/workflows/mazandaran-city-news.yml",
+      "media_policy": "Short sourced text+original links, no automatic media copying from newly added sources until verified rights",
+      "frequency": "20m",
+      "daily_cap": 12,
+      "first_run": "2026-11-08",
+      "initial_posts_published": 0
+    }
   },
   "created": "2026-11-08"
 }
