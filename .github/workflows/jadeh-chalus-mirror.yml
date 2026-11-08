@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: jadeh-chalus-mirror
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   mirror:
@@ -29,6 +29,8 @@ jobs:
           python-version: "3.12"
       - name: نصب وابستگی‌ها
         run: pip install -r requirements.txt
+      - name: آزمون کپشن، آلبوم و اتصال ادامه متن
+        run: python -m unittest -q test_mirror_publish.py
       - name: بازنشر همه پست‌های تازه با تصاویر و ویدئوها، بدون فیلتر
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
