@@ -1,0 +1,91 @@
+name: 'نشانی: شمال | اخبار شش شهر مازندران'
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "city_news.py"
+      - "city_sources.json"
+      - "test_city_news.py"
+      - ".github/workflows/mazandaran-city-news.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: neshani-north-city-coverage
+  cancel-in-progress: false
+
+jobs:
+  city:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate local-news freshness and source linking
+        run: python -m unittest -q test_mirror_publish.py test_city_news.py
+      - name: Collect and publish attributed city notices
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALERT_CHAT_ID: "@chaloosradar"
+          CITY_STATE_FILE: "city_state.json"
+          CITY_SOURCES_FILE: "city_sources.json"
+          CITY_DRY_RUN: "0"
+          CITY_MAX_PAGES: "12"
+          CITY_MAX_SEND_PER_RUN: "4"
+          CITY_MAX_SEND_PER_DAY: "12"
+          CITY_MAX_AGE_HOURS: "36"
+        run: python city_news.py
+      - name: Persist city cursors and duplicate signatures safely
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, json, base64, time
+          from pathlib import Path
+          import requests
+          path = Path("city_state.json")
+          if not path.exists():
+              print("No state file to checkpoint")
+              raise SystemExit(0)
+          local = path.read_text(encoding="utf-8")
+          endpoint = "https://api.github.com/repos/" + os.environ["GITHUB_REPOSITORY"] + "/contents/city_state.json"
+          headers = {
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          for attempt in range(5):
+              result = requests.get(endpoint, headers=headers, timeout=30)
+              result.raise_for_status()
+              obj = result.json()
+              remote = base64.b64decode(obj["content"]).decode("utf-8")
+              if json.loads(remote) == json.loads(local):
+                  print("City coverage: state unchanged")
+                  break
+              # A single workflow owns this file, protected by concurrency.
+              update = requests.put(endpoint, headers=headers, timeout=30, json={
+                  "message": "checkpoint North city news [skip ci]",
+                  "branch": "main", "sha": obj["sha"],
+                  "content": base64.b64encode(local.encode("utf-8")).decode("ascii"),
+              })
+              if update.status_code in (409, 422):
+                  time.sleep(2 + attempt)
+                  continue
+              update.raise_for_status()
+              print("City news cursor checkpoint saved")
+              break
+          else:
+              raise RuntimeError("Failed to checkpoint city news")
+          PY
