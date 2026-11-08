@@ -1,16 +1,21 @@
 {
   "sources": {
-    "khabarforisari": 228185,
+    "khabarforisari": 228201,
     "babolnews": 114479,
     "amolnoor": 174297,
     "nowshahrcity1": 1943,
     "ramsar11": 56557,
     "ostandarimazandaran_ir": 12531
   },
-  "published": {},
-  "last_run": "2026-11-08T08:08:23.420428+00:00",
+  "published": {
+    "532dde4cafe422d025308447321f11d7b201e2cd74fcb2268dae411dff2fe113": 1794144808.242056,
+    "b5d2f2a9d11f95824efab53a269fdb0d5139efbe9965b1b7aa28655a0203a876": 1794144808.242056,
+    "88b977d67a496e89f586052bd502df98ed9a08ecbabceece3a6d1d2f93f9dabe": 1794144808.242056,
+    "67524f40d4d96e31bce5eae4acc957fa78bbd6cf6b916f5bb0a52754572ae74c": 1794144808.242056
+  },
+  "last_run": "2026-11-08T13:33:28.242056+00:00",
   "daily": {
     "date": "2026-11-08",
-    "count": 0
+    "count": 4
   }
 }
