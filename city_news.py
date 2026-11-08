@@ -236,6 +236,7 @@ def main():
     if not sources:
         raise RuntimeError("No city sources configured")
     state = load_json(STATE_FILE, {"sources": {}, "published": {}})
+    old_state = json.dumps(state, sort_keys=True, ensure_ascii=False)
     state.setdefault("sources", {})
     state.setdefault("published", {})
     now = datetime.now(timezone.utc)
@@ -292,8 +293,9 @@ def main():
             if sent >= MAX_POSTS_PER_RUN or daily["count"] >= MAX_POSTS_PER_DAY:
                 break
     finally:
-        state["last_run"] = now.isoformat()
-        save_state(state)
+        if json.dumps(state, sort_keys=True, ensure_ascii=False) != old_state:
+            state["last_run"] = now.isoformat()
+            save_state(state)
     print("CITY DONE", "sent=", sent, "new_source_baselines=", bootstrapped,
           "source_errors=", ",".join(fetch_errors), "daily_count=", daily["count"], flush=True)
     # Individual sources may temporarily be inaccessible. Keep other sources
