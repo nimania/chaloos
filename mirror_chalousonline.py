@@ -174,10 +174,13 @@ def send_text(text):
         part, text = text[:3900], text[3900:]
         bot_call("sendMessage", {"text": part, "disable_web_page_preview": True})
 
-def send_media(kind, url, post_id):
+def send_media(kind, url, post_id, caption=""):
     method = "sendPhoto" if kind == "photo" else "sendVideo"
     try:
-        bot_call(method, {kind: url})
+        payload = {kind: url}
+        if caption:
+            payload["caption"] = caption
+        bot_call(method, payload)
         return True
     except Exception as exc:
         # Telegram often rejects CDN URL fetching (HTTP 400). Try uploading
@@ -206,29 +209,38 @@ def send_media(kind, url, post_id):
                     raise RuntimeError("Media download was empty")
                 tmp.seek(0)
                 filename = SOURCE + (".jpg" if kind == "photo" else ".mp4")
-                bot_call(method, {}, files={kind: (filename, tmp, media_type)})
+                bot_call(method, {"caption": caption} if caption else {}, files={kind: (filename, tmp, media_type)})
         return True
     except Exception as exc:
         print("Media could not be uploaded:", post_id, kind, type(exc).__name__, str(exc)[:150], flush=True)
         return False
 
 def publish(post):
+    """Publish media with its caption when possible, preserving complete text."""
     assets = [("photo", url) for url in post["photos"]]
     assets += [("video", url) for url in post["videos"]]
     incomplete = bool(post["has_media"] and not assets)
-    # Individual uploads allow a per-file fallback when Telegram cannot fetch
-    # remote CDN URLs. The rate limit is respected for each channel message.
-    for kind, url in assets:
-        if not send_media(kind, url, post["id"]):
-            incomplete = True
     body = post["text"]
+    # A Telegram media caption has a tighter limit than a regular message.
+    # Use a conservative bound to account for Unicode emoji UTF-16 units.
+    caption = body if assets and len(body.encode("utf-16-le")) // 2 <= 900 else ""
+    caption_sent = False
+    for kind, url in assets:
+        to_caption = caption if caption and not caption_sent else ""
+        if send_media(kind, url, post["id"], caption=to_caption):
+            if to_caption:
+                caption_sent = True
+        else:
+            incomplete = True
+    if caption_sent:
+        body = ""
     if incomplete:
         body = (body + "\n\n" if body else "") + (
             "📎 بخشی از فایل‌های این پست در نمای عمومی تلگرام قابل دریافت نبود. "
             "مشاهدهٔ نسخهٔ اصلی: " + post["source_url"]
         )
-    if not body and not assets:
-        body = "📎 پست رسانه‌ای تازه؛ محتوای آن از پیش‌نمایش عمومی قابل دریافت نبود."
+    if not body and not assets and not incomplete:
+        body = "📎 پست رسانه‌ای تازه؛ محتوای آن از پیش‌نمایش عمومی قابل دریافت نبود. " + post["source_url"]
     if body:
         send_text(body)
     return incomplete
