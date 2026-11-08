@@ -46,6 +46,9 @@ jobs:
           python-version: "3.12"
       - if: steps.cadence.outputs.run == 'true'
         run: pip install -r requirements.txt
+      - name: آزمون یکپارچگی پست و رسانه
+        if: steps.cadence.outputs.run == 'true'
+        run: python -m unittest -q test_mirror_publish.py
       - name: ارسال دایجست خبری به کانال
         if: steps.cadence.outputs.run == 'true'
         env:
