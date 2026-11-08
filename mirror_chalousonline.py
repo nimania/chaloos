@@ -177,81 +177,189 @@ def bot_call(method, payload, files=None):
         return response
     raise RuntimeError("Telegram rate-limit retry attempts exceeded.")
 
-def send_text(text):
-    # Telegram limits a regular text message to 4096 characters.
+def _utf16_units(text):
+    """Telegram limits captions and messages in UTF-16 code units."""
+    return len(text.encode("utf-16-le")) // 2
+
+
+def split_telegram_text(text, limit):
+    """Avoid splitting an emoji or a non-BMP codepoint across chunks."""
+    used = 0
+    for i, char in enumerate(text):
+        unit_count = 2 if ord(char) > 0xFFFF else 1
+        if used + unit_count > limit:
+            # Prefer a whitespace boundary near the end of the allowed span.
+            boundary = max(text.rfind("\n", 0, i), text.rfind(" ", 0, i))
+            if boundary >= i // 2:
+                return text[:boundary + 1], text[boundary + 1:]
+            return text[:i], text[i:]
+        used += unit_count
+    return text, ""
+
+
+def send_text(text, reply_to_message_id=None):
+    """Reply to the associated media rather than creating an orphaned text post."""
     while text:
-        part, text = text[:3900], text[3900:]
-        bot_call("sendMessage", {"text": part, "disable_web_page_preview": True})
+        part, text = split_telegram_text(text, 3900)
+        payload = {"text": part, "disable_web_page_preview": True}
+        if reply_to_message_id:
+            payload["reply_parameters"] = {
+                "message_id": reply_to_message_id,
+                "allow_sending_without_reply": True,
+            }
+        response = bot_call("sendMessage", payload)
+        if not reply_to_message_id:
+            reply_to_message_id = response.get("result", {}).get("message_id")
+    return reply_to_message_id
+
+
+def _download_media(kind, url, stack):
+    """Download a media file when Telegram's CDN URL cannot be fetched by Bot API."""
+    from tempfile import SpooledTemporaryFile
+    source = stack.enter_context(requests.get(
+        url, headers=HEADERS, stream=True, timeout=HTTP_TIMEOUT
+    ))
+    source.raise_for_status()
+    cap = 45 * 1024 * 1024
+    if int(source.headers.get("content-length") or 0) > cap:
+        raise RuntimeError("Media exceeds 45MB upload limit")
+    mime = source.headers.get("Content-Type", "").split(";")[0].strip()
+    if not mime or "/" not in mime:
+        mime = "image/jpeg" if kind == "photo" else "video/mp4"
+    tmp = stack.enter_context(SpooledTemporaryFile(max_size=5 * 1024 * 1024))
+    size = 0
+    for chunk in source.iter_content(chunk_size=256 * 1024):
+        if chunk:
+            size += len(chunk)
+            if size > cap:
+                raise RuntimeError("Media exceeds 45MB upload limit")
+            tmp.write(chunk)
+    if not size:
+        raise RuntimeError("Media download was empty")
+    tmp.seek(0)
+    extension = ".jpg" if kind == "photo" else ".mp4"
+    return (SOURCE + extension, tmp, mime)
+
 
 def send_media(kind, url, post_id, caption=""):
+    """Send one media item with caption, returning its Telegram message ID."""
     method = "sendPhoto" if kind == "photo" else "sendVideo"
+    payload = {kind: url}
+    if caption:
+        payload["caption"] = caption
     try:
-        payload = {kind: url}
-        if caption:
-            payload["caption"] = caption
-        bot_call(method, payload)
-        return True
+        response = bot_call(method, payload)
+        return response["result"]["message_id"]
     except Exception as exc:
-        # Telegram often rejects CDN URL fetching (HTTP 400). Try uploading
-        # downloaded bytes instead of discarding the photo or video.
-        print("Direct media URL rejected:", post_id, kind, type(exc).__name__, flush=True)
+        print("Remote media URL rejected:", post_id, kind, str(exc)[:150], flush=True)
     try:
-        from tempfile import SpooledTemporaryFile
-        with requests.get(url, headers=HEADERS, stream=True, timeout=HTTP_TIMEOUT) as source:
-            source.raise_for_status()
-            length = int(source.headers.get("content-length") or 0)
-            cap = 45 * 1024 * 1024
-            if length > cap:
-                raise RuntimeError("Media exceeds safe upload limit")
-            media_type = source.headers.get("Content-Type", "").split(";")[0].strip()
-            if not media_type or "/" not in media_type:
-                media_type = "image/jpeg" if kind == "photo" else "video/mp4"
-            with SpooledTemporaryFile(max_size=5 * 1024 * 1024) as tmp:
-                total = 0
-                for chunk in source.iter_content(chunk_size=256 * 1024):
-                    if chunk:
-                        total += len(chunk)
-                        if total > cap:
-                            raise RuntimeError("Media too large to upload")
-                        tmp.write(chunk)
-                if not total:
-                    raise RuntimeError("Media download was empty")
-                tmp.seek(0)
-                filename = SOURCE + (".jpg" if kind == "photo" else ".mp4")
-                bot_call(method, {"caption": caption} if caption else {}, files={kind: (filename, tmp, media_type)})
-        return True
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            upload = _download_media(kind, url, stack)
+            payload = {"caption": caption} if caption else {}
+            response = bot_call(method, payload, files={kind: upload})
+            return response["result"]["message_id"]
     except Exception as exc:
-        print("Media could not be uploaded:", post_id, kind, type(exc).__name__, str(exc)[:150], flush=True)
-        return False
+        print("Media upload failed:", post_id, kind, type(exc).__name__, str(exc)[:180], flush=True)
+        return None
+
+
+def send_media_group(assets, post_id, caption=""):
+    """Publish 2-10 photos/videos as a single Telegram album.
+
+    Return message IDs on success, or None so the caller can fall back to
+    one-by-one uploads. This function never partially publishes an album.
+    """
+    if not 2 <= len(assets) <= 10:
+        raise ValueError("Telegram albums require 2-10 media items")
+    remote_media = []
+    for i, (kind, url) in enumerate(assets):
+        item = {"type": kind, "media": url}
+        if i == 0 and caption:
+            item["caption"] = caption
+        remote_media.append(item)
+    try:
+        response = bot_call("sendMediaGroup", {"media": remote_media})
+        return [item["message_id"] for item in response["result"]]
+    except Exception as exc:
+        print("Remote album URL rejected:", post_id, str(exc)[:150], flush=True)
+
+    # Upload from bytes for Telegram CDN URLs it cannot retrieve directly.
+    try:
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            files = {}
+            local_media = []
+            for i, (kind, url) in enumerate(assets):
+                files["asset" + str(i)] = _download_media(kind, url, stack)
+                item = {"type": kind, "media": "attach://asset" + str(i)}
+                if i == 0 and caption:
+                    item["caption"] = caption
+                local_media.append(item)
+            response = bot_call("sendMediaGroup", {
+                "media": json.dumps(local_media, ensure_ascii=False)
+            }, files=files)
+            return [item["message_id"] for item in response["result"]]
+    except Exception as exc:
+        print("Album upload failed:", post_id, type(exc).__name__, str(exc)[:180], flush=True)
+        return None
+
 
 def publish(post):
-    """Publish media with its caption when possible, preserving complete text."""
-    assets = [("photo", url) for url in post["photos"]]
-    assets += [("video", url) for url in post["videos"]]
-    incomplete = bool((post["has_media"] and not assets) or post.get("hidden_media"))
-    body = post["text"]
-    # A Telegram media caption has a tighter limit than a regular message.
-    # Use a conservative bound to account for Unicode emoji UTF-16 units.
-    caption = body if assets and len(body.encode("utf-16-le")) // 2 <= 900 else ""
+    """Keep the original text and its photos/videos together in the destination.
+
+    A short text is the caption. For longer text, attach the first 1000 UTF-16
+    units to the media and send the remainder as a reply to that media, never
+    as an unrelated channel post. Multiple files form an album whenever possible.
+    """
+    assets = [("photo", url) for url in post.get("photos", [])]
+    assets += [("video", url) for url in post.get("videos", [])]
+    incomplete = bool(
+        (post.get("has_media") and not assets) or post.get("hidden_media")
+    )
+    body = post.get("text", "").strip()
+    caption, continuation = split_telegram_text(body, 1000) if assets else ("", body)
+    anchor = None
     caption_sent = False
-    for kind, url in assets:
-        to_caption = caption if caption and not caption_sent else ""
-        if send_media(kind, url, post["id"], caption=to_caption):
-            if to_caption:
-                caption_sent = True
-        else:
-            incomplete = True
-    if caption_sent:
-        body = ""
+
+    # Preserve the full album, splitting only when Telegram's 10-item cap applies.
+    for index in range(0, len(assets), 10):
+        batch = assets[index:index + 10]
+        batch_caption = caption if not caption_sent else ""
+        if len(batch) > 1:
+            message_ids = send_media_group(batch, post["id"], caption=batch_caption)
+            if message_ids:
+                anchor = anchor or message_ids[0]
+                caption_sent = caption_sent or bool(batch_caption)
+                continue
+        # If an album cannot be sent, upload each item and keep the caption on
+        # the first *successfully delivered* item, not the first attempted item.
+        for kind, url in batch:
+            item_caption = caption if not caption_sent else ""
+            message_id = send_media(kind, url, post["id"], caption=item_caption)
+            if message_id:
+                anchor = anchor or message_id
+                caption_sent = caption_sent or bool(item_caption)
+            else:
+                incomplete = True
+
+    if anchor:
+        remainder = continuation if caption_sent else body
+    else:
+        remainder = body
     if incomplete:
-        body = (body + "\n\n" if body else "") + (
-            "📎 بخشی از فایل‌های این پست در نمای عمومی تلگرام قابل دریافت نبود. "
+        warning = (
+            "📎 بخشی از فایل‌های این پست از نمای عمومی تلگرام قابل دریافت نبود. "
             "مشاهدهٔ نسخهٔ اصلی: " + post["source_url"]
         )
-    if not body and not assets and not incomplete:
-        body = "📎 پست رسانه‌ای تازه؛ محتوای آن از پیش‌نمایش عمومی قابل دریافت نبود. " + post["source_url"]
-    if body:
-        send_text(body)
+        remainder = (remainder + "\n\n" if remainder else "") + warning
+    if not anchor and not remainder and post.get("has_media"):
+        remainder = (
+            "📎 پست رسانه‌ای که فایل آن از نمای عمومی قابل دریافت نبود: "
+            + post["source_url"]
+        )
+    if remainder:
+        send_text(remainder, reply_to_message_id=anchor)
     return incomplete
 
 def main():
