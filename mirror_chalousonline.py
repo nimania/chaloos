@@ -67,14 +67,14 @@ def parse_posts(page):
         for tag in re.finditer(r"<(?:a|div)\b[^>]*>", snippet, re.I | re.S):
             if "tgme_widget_message_photo_wrap" not in tag.group(0):
                 continue
-            photo = re.search(r'background-image:\s*url\(["\x27]?([^)"\x27]+)', tag.group(0), re.I)
+            photo = re.search(r'background-image:\s*url\(["\x27]?([^)"\x27]+)', html.unescape(tag.group(0)), re.I)
             if photo:
                 url = html.unescape(photo.group(1))
                 if url.startswith("https://") and url not in seen_media:
                     media_order.append((tag.start(), "photo", url))
                     seen_media.add(url)
         for tag in re.finditer(r"<(?:video|source)\b[^>]*>", snippet, re.I | re.S):
-            match_url = re.search(r'\bsrc=["\x27]([^"\x27]+)', tag.group(0), re.I)
+            match_url = re.search(r'\bsrc=["\x27]([^"\x27]+)', html.unescape(tag.group(0)), re.I)
             if match_url:
                 url = html.unescape(match_url.group(1))
                 if url.startswith("https://") and url not in seen_media:
