@@ -38,11 +38,11 @@ def decode_text(fragment):
 def strip_source_footer(text):
     """Remove the channel's repetitive promotional footer, not the news text."""
     lines = text.splitlines()
-    handle = re.compile(r"(?:🆔\\s*)?@" + re.escape(SOURCE) + r"\\s*$", re.I)
-    link = re.compile(r"https?://(?:t\\.me|telegram\\.me)/(?:s/)?" + re.escape(SOURCE) + r"/?\\s*$", re.I)
+    handle = re.compile(r"(?:🆔\s*)?@" + re.escape(SOURCE) + r"\s*$", re.I)
+    link = re.compile(r"https?://(?:t\.me|telegram\.me)/(?:s/)?" + re.escape(SOURCE) + r"/?\s*$", re.I)
     while lines and (not lines[-1].strip() or handle.fullmatch(lines[-1].strip()) or link.fullmatch(lines[-1].strip())):
         lines.pop()
-    if lines and re.search(r"کان[\\sـ]*ال\\s+ج[\\sـ]*اده\\s+چ[\\sـ]*ال[\\sـ]*وس", lines[-1]):
+    if lines and re.search(r"کان[\sـ]*ال\s+ج[\sـ]*اده\s+چ[\sـ]*ال[\sـ]*وس", lines[-1]):
         lines.pop()
     return "\n".join(lines).strip()
 
