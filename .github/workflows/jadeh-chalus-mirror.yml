@@ -38,22 +38,57 @@ jobs:
           MIRROR_BOOTSTRAP: "recent"
           MAX_SOURCE_PAGES: "80"
         run: python mirror_chalousonline.py
-      - name: ذخیره شناسه آخرین پست پردازش‌شده
+      - name: ثبت ایمن آخرین شناسه بدون تعارض تاریخچه Git
         if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if [[ -n "$(git status --porcelain jadeh_chalus_state.json)" ]]; then
-            git config user.name "chalous-bot"
-            git config user.email "bot@users.noreply.github.com"
-            git add jadeh_chalus_state.json
-            git commit -m "checkpoint JadehChalus mirroring [skip ci]"
-            for i in 1 2 3 4; do
-              git pull --rebase && git push && exit 0
-              echo "Checkpoint push conflict; retry $i"
-              sleep 4
-            done
-            echo "Could not persist mirror checkpoint" >&2
-            exit 1
-          else
-            echo "No cursor change."
-          fi
+          python - <<'PY'
+          import os, json, base64, time
+          from pathlib import Path
+          import requests
+
+          state_file = Path("jadeh_chalus_state.json")
+          if not state_file.exists():
+              print("No local state file; no checkpoint")
+              raise SystemExit(0)
+          local_id = int(json.loads(state_file.read_text(encoding="utf-8")).get("last_id", 0))
+          if local_id <= 0:
+              print("No processed post to checkpoint")
+              raise SystemExit(0)
+          repo = os.environ["GITHUB_REPOSITORY"]
+          endpoint = f"https://api.github.com/repos/{repo}/contents/jadeh_chalus_state.json"
+          headers = {
+              "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          content = base64.b64encode(
+              (json.dumps({"channel": "jadeh_chalus", "last_id": local_id}, ensure_ascii=False, indent=2) + "\n").encode()
+          ).decode()
+          for attempt in range(6):
+              response = requests.get(endpoint, headers=headers, timeout=30)
+              response.raise_for_status()
+              info = response.json()
+              raw = base64.b64decode(info["content"])
+              remote_id = int(json.loads(raw).get("last_id", 0))
+              if local_id <= remote_id:
+                  print(f"Cursor current: remote={remote_id} local={local_id}. No rollback.")
+                  break
+              result = requests.put(endpoint, headers=headers, timeout=30, json={
+                  "message": "checkpoint JadehChalus mirroring [skip ci]",
+                  "branch": "main",
+                  "sha": info["sha"],
+                  "content": content,
+              })
+              if result.status_code in (409, 422):
+                  print("Concurrent cursor update; retry", attempt + 1, flush=True)
+                  time.sleep(attempt + 1)
+                  continue
+              result.raise_for_status()
+              print(f"Cursor advanced from {remote_id} to {local_id}")
+              break
+          else:
+              raise RuntimeError("Could not persist source cursor after retries")
+          PY
