@@ -5,7 +5,8 @@ import sys
 import json
 import requests
 
-from chalous_status import fetch_channel_posts, get_road_news, format_news
+from chalous_status import fetch_channel_posts
+from mirror_chalousonline import send_media, send_text
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 ALERT_CHAT_ID = os.environ.get("ALERT_CHAT_ID", "").strip()
@@ -26,32 +27,33 @@ def api(method, payload):
 
 
 def publish_post(post):
-    # Preserve the full text (Telegram captions are limited to 1024 chars).
-    # Public Telegram previews are not guaranteed to expose original media.
+    """Publish every text segment and all publicly accessible media."""
     body = post.get("text", "").strip()
     media = ([("photo", url) for url in post.get("photos", [])]
              + [("video", url) for url in post.get("videos", [])])
-    if not media:
-        if body:
-            api("sendMessage", {"text": body[:4096], "disable_web_page_preview": True})
-        return
-    # Send each photo/video, retaining visual material if Telegram can fetch it.
     sent = False
-    for kind, url in media[:10]:
-        try:
-            api("sendPhoto" if kind == "photo" else "sendVideo",
-                {"photo" if kind == "photo" else "video": url})
+    missing = False
+    for kind, url in media:
+        if send_media(kind, url, post.get("source_url", "")):
             sent = True
-        except Exception as exc:
-            print("Media unavailable:", type(exc).__name__, str(exc)[:350], flush=True)
+        else:
+            missing = True
+    if missing:
+        body += ("\n\n" if body else "") + (
+            "📎 بعضی فایل‌های رسانه‌ای از پیش‌نمایش عمومی قابل دریافت نبودند. "
+            "نسخه اصلی: " + post.get("source_url", "")
+        )
     if body:
-        api("sendMessage", {"text": body[:4096], "disable_web_page_preview": True})
+        send_text(body)
     elif not sent:
-        print("Post has no downloadable media; skipped:", post.get("source_url"))
+        print("Public media unavailable:", post.get("source_url"), flush=True)
 
 
 def main():
-    posts = fetch_channel_posts(NEWS_LIMIT)
+    # @jadeh_chalus has its own complete no-filter mirror. Avoid duplicates
+    # while preserving the independent road-news digest for other sources.
+    posts = [p for p in fetch_channel_posts(max(40, NEWS_LIMIT * 8))
+             if p.get("source") != "jadeh_chalus"][:NEWS_LIMIT]
     print(f"Media test: found {len(posts)} matching public posts", flush=True)
     for p in posts:
         print(f"Media: photos={len(p.get('photos', []))}, videos={len(p.get('videos', []))}, source={p.get('source_url', '')}", flush=True)
