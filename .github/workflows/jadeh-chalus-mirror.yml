@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: jadeh-chalus-mirror
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   mirror:
