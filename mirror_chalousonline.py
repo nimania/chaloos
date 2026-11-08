@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import requests
+from propaganda import is_pure_propaganda
 
 SOURCE = os.getenv("SOURCE_CHANNEL", "chalousonline").strip().lstrip("@").lower()
 DESTINATION = os.getenv("ALERT_CHAT_ID", "@chaloosradar").strip()
@@ -124,6 +125,8 @@ def should_publish(post, mode=None):
     A skipped source ID still advances the independent per-source cursor,
     so routine off-topic posts do not get reconsidered forever.
     """
+    if is_pure_propaganda(post.get("text", "")):
+        return False
     mode = (mode or MIRROR_FILTER).lower()
     if mode == "all":
         return True
@@ -391,6 +394,8 @@ def publish(post):
     units to the media and send the remainder as a reply to that media, never
     as an unrelated channel post. Multiple files form an album whenever possible.
     """
+    if is_pure_propaganda(post.get("text", "")):
+        return
     assets = post.get("assets")
     if assets is None:
         assets = [("photo", url) for url in post.get("photos", [])]
