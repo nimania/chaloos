@@ -1,10 +1,10 @@
 {
   "sources": {
-    "khabarforisari": 228460,
-    "babolnews": 114593,
-    "amolnoor": 174297,
-    "nowshahrcity1": 1943,
-    "ramsar11": 56557,
+    "khabarforisari": 228465,
+    "babolnews": 114621,
+    "amolnoor": 174494,
+    "nowshahrcity1": 1950,
+    "ramsar11": 56620,
     "ostandarimazandaran_ir": 12531
   },
   "published": {
@@ -59,11 +59,15 @@
     "3e6d094f40fe7818b8eb9f19c986ae42aaf2224bd653868e6a183e730273cbfa": 1794435299.858832,
     "3fe1e0f4f94333808dff70c6a17fc88d7f9850f7f3b30f68fc2e24492e7ad100": 1794435299.858832,
     "9a5313664cd0f81f40aafc21fe8a0c9e4f41ebd515da4a54547990091bbb2a79": 1794435299.858832,
-    "b5ed3d4dfb9b83cb0434d33edac26cc6a5b9b711b27abbcc938dc3f148364a08": 1794435299.858832
+    "b5ed3d4dfb9b83cb0434d33edac26cc6a5b9b711b27abbcc938dc3f148364a08": 1794435299.858832,
+    "fbeb323d9ddd51273699e63cc34bb9e8699fd5c625ff9a50b704506ebd20f084": 1794452899.967564,
+    "8138d0af9f70084f52efe68ed57a3015d401e933f84faaa688eabc77cfaec845": 1794452899.967564,
+    "b6ec41b6720a12a98b8ce599fd2e9b5a2f85f0722e902288a1150da8ca62dced": 1794452899.967564,
+    "69e3de0ac4f6608ffc697b82b94974ba82a2eb3767990d98543434876a23f031": 1794452899.967564
   },
-  "last_run": "2026-11-11T22:14:59.858832+00:00",
+  "last_run": "2026-11-12T03:08:19.967564+00:00",
   "daily": {
     "date": "2026-11-12",
-    "count": 4
+    "count": 8
   }
 }
