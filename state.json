@@ -1,15 +1,15 @@
 {
-  "last_key": "closed|None",
+  "last_key": "open|None",
   "last_status": {
-    "status": "closed",
-    "status_fa": "بسته (مسدود)",
+    "status": "open",
+    "status_fa": "باز (دوطرفه)",
     "direction": null,
     "direction_fa": null,
-    "evidence": "همین الان خبر اومد اصلاحیه ریز خورده جاده چالوس از ساعت ۷ صبح یکشنبه مسدود میشه تا ساعت ۲۴ سه شنبه",
-    "confidence": 0.85,
-    "source": "https://t.me/chaluscity1/7869",
-    "published": "2026-11-14T19:33:47+00:00",
-    "checked_at": "2026-11-14T20:44+00:00",
-    "raw_title": "همین الان خبر اومد اصلاحیه ریز خورده جاده چالوس از ساعت ۷ صبح یکشنبه مسدود میشه تا ساعت ۲۴ سه شنبه"
+    "evidence": "جاده چالوس از دقایقی پیش بازگشایی شد ساعت ۰۰:۰۵ بامداد چهارشنبه @chaluscity1",
+    "confidence": 0.9,
+    "source": "https://t.me/chaluscity1/7881",
+    "published": "2026-11-17T20:38:25+00:00",
+    "checked_at": "2026-11-18T23:31+00:00",
+    "raw_title": "♦️ طبق اعلام راهداری؛ جاده چالوس از دقایقی پیش بازگشایی شد ساعت ۰۰:۰۵ بامداد چهارشنبه @chaluscity1"
   }
 }
